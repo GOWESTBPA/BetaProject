@@ -127,9 +127,9 @@
     // ============ Cloudinary 뮤비 URL ============
     const VIDEO_URL = "https://res.cloudinary.com/danknjfhv/video/upload/v1766605968/%EC%99%9C%ED%81%B4%EB%A6%AD_%EB%A9%94%EC%9D%B4%ED%94%8C_AI_%EB%B3%B8%EC%84%AD_%EC%9C%A0%EC%A0%80%EB%93%A4%EC%9D%B4_%EB%AD%98_%ED%96%88%EB%8B%A4%EA%B3%A0_ooya98go318_url4h2.mp4";
     
-    // ============ 효과음 설정 ============
+    // ============ 효과음 설정 (Cloudinary) ============
     const SOUND_URL = {
-      hit: "https://drive.google.com/uc?export=download&id=1gOXtYKHFZpHdjSKhNERN3Ea8x2kcG5Px"
+      hit: "https://res.cloudinary.com/danknjfhv/video/upload/v1766606599/Firework_blast_far_hyxz2v.ogg"
     };
     
     let hitSound = null;
@@ -238,7 +238,7 @@
       }
     }
 
-    // 난이도 (초보용 = EASY)
+    // 난이도 설정
     const DIFFICULTY = {
       EASY: { threshold: 0.8, minInterval: 500 },
       NORMAL: { threshold: 0.5, minInterval: 300 },
@@ -303,8 +303,8 @@
       loadingDiv.style.display = "block";
       
       try {
-        // 비트 감지 (초보용 = EASY)
-        const detector = new BeatDetector(DIFFICULTY.EASY);
+        // 비트 감지 (HARD = 노트 많음!)
+        const detector = new BeatDetector(DIFFICULTY.HARD);
         const detectedNotes = await detector.detectBeats(VIDEO_URL);
         
         notes = detectedNotes.map(note => ({
