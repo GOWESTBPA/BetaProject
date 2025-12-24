@@ -4,50 +4,343 @@
   <meta charset="UTF-8">
   <title>플레이 화면</title>
   <style>
-    body { margin:0; overflow:hidden; background:black; }
+    body { margin:0; overflow:hidden; background:black; font-family: sans-serif; }
     #video-bg { position:absolute; top:0; left:0; width:100%; height:100%; object-fit:cover; z-index:0; }
     #notes-layer { position:absolute; top:0; left:0; width:100%; height:100%; z-index:1; pointer-events:none; }
+    
+    /* UI 오버레이 */
+    #ui-layer {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      z-index: 2;
+      pointer-events: none;
+    }
+    
+    #score-display {
+      position: absolute;
+      top: 20px; right: 20px;
+      color: white;
+      font-size: 24px;
+      text-shadow: 2px 2px 4px black;
+    }
+    
+    #combo-display {
+      position: absolute;
+      top: 60px; right: 20px;
+      color: yellow;
+      font-size: 20px;
+      text-shadow: 2px 2px 4px black;
+    }
+    
+    #judgment-display {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 48px;
+      font-weight: bold;
+      text-shadow: 3px 3px 6px black;
+      opacity: 0;
+      transition: opacity 0.1s;
+    }
+    
+    #key-hints {
+      position: absolute;
+      bottom: 80px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 20px;
+    }
+    
+    .key-hint {
+      width: 60px;
+      height: 60px;
+      border: 3px solid white;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+      color: white;
+      background: rgba(0,0,0,0.5);
+      transition: background 0.1s;
+    }
+    
+    .key-hint.active {
+      background: rgba(255,255,0,0.7);
+    }
+    
+    /* 응원 메시지 */
+    #cheer-message {
+      position: absolute;
+      bottom: 160px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 28px;
+      color: #00ff88;
+      text-shadow: 2px 2px 4px black;
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
   </style>
 </head>
 <body>
-  <video id="video-bg" autoplay muted></video>
+  <video id="video-bg" autoplay></video>
   <canvas id="notes-layer"></canvas>
+  
+  <div id="ui-layer">
+    <div id="score-display">SCORE: 0</div>
+    <div id="combo-display">COMBO: 0</div>
+    <div id="judgment-display"></div>
+    <div id="cheer-message"></div>
+    
+    <div id="key-hints">
+      <div class="key-hint" data-key="D">D</div>
+      <div class="key-hint" data-key="F">F</div>
+      <div class="key-hint" data-key="J">J</div>
+      <div class="key-hint" data-key="K">K</div>
+    </div>
+  </div>
+  
   <script>
-    const song = window.opener.songData;
+    // ============ 게임 설정 ============
+    const LANE_KEYS = ['D', 'F', 'J', 'K'];
+    const LANE_COLORS = ['#ff6b6b', '#ffd93d', '#6bcb77', '#4d96ff'];
+    const NOTE_WIDTH = 60;
+    const NOTE_HEIGHT = 20;
+    const HIT_LINE_Y_RATIO = 0.85;
+    const NOTE_SPEED = 300;
+    
+    // 판정 설정 (넉넉하게!)
+    const JUDGMENT = {
+      PERFECT: { threshold: 200, score: 100, color: '#ffff00', text: 'PERFECT!' },
+      GOOD: { threshold: 400, score: 50, color: '#00ff00', text: 'GOOD!' },
+      MISS: { threshold: 600, score: 0, color: '#ff0000', text: 'MISS' }
+    };
+    
+    // 응원 메시지
+    const CHEER_MESSAGES = [
+      "괜찮아! 😊",
+      "다음엔 잘 할 수 있어!",
+      "화이팅! 💪",
+      "잘하고 있어!",
+      "음악을 즐기자! 🎵"
+    ];
+    
+    // ============ 게임 상태 ============
+    let score = 0;
+    let combo = 0;
+    let maxCombo = 0;
+    let notes = [];
+    let startTime = 0;
+    let isPlaying = false;
+    
+    // ============ DOM 요소 ============
     const video = document.getElementById("video-bg");
     const canvas = document.getElementById("notes-layer");
     const ctx = canvas.getContext("2d");
-
+    const scoreDisplay = document.getElementById("score-display");
+    const comboDisplay = document.getElementById("combo-display");
+    const judgmentDisplay = document.getElementById("judgment-display");
+    const cheerMessage = document.getElementById("cheer-message");
+    const keyHints = document.querySelectorAll(".key-hint");
+    
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
-
-    video.src = "../songs/" + song.file;
-    video.play();
-
-    fetch("../songs/" + song.notes)
-      .then(res => res.text())
-      .then(text => {
-        const notes = text.split("\n").map(line => {
-          const [time,key] = line.split(",");
-          return {time: parseFloat(time), key};
-        });
-
-        const startTime = Date.now()/1000;
-        function render() {
-          ctx.clearRect(0,0,canvas.width,canvas.height);
-          const now = Date.now()/1000 - startTime;
-          notes.forEach(note => {
-            const y = (note.time - now) * 200 + canvas.height/2;
-            if (y > 0 && y < canvas.height) {
-              ctx.fillStyle = "red";
-              ctx.fillRect(100, y, 50, 20);
-              ctx.fillText(note.key, 120, y+15);
-            }
+    
+    const hitLineY = canvas.height * HIT_LINE_Y_RATIO;
+    
+    // ============ 레인 X 좌표 계산 ============
+    function getLaneX(laneIndex) {
+      const totalWidth = LANE_KEYS.length * (NOTE_WIDTH + 20);
+      const startX = (canvas.width - totalWidth) / 2;
+      return startX + laneIndex * (NOTE_WIDTH + 20);
+    }
+    
+    // ============ 노트 로드 ============
+    async function loadNotes() {
+      const song = window.opener ? window.opener.songData : null;
+      
+      if (!song) {
+        console.error("곡 데이터 없음!");
+        return;
+      }
+      
+      video.src = "../songs/" + song.file;
+      
+      try {
+        const response = await fetch("../songs/" + song.notes);
+        if (response.ok) {
+          const text = await response.text();
+          notes = text.split("\n").filter(line => line.trim()).map(line => {
+            const [time, key] = line.split(",");
+            return { 
+              time: parseFloat(time), 
+              key: key.trim().toUpperCase(),
+              hit: false,
+              missed: false
+            };
           });
-          requestAnimationFrame(render);
         }
-        render();
+      } catch (e) {
+        console.log("노트 파일 없음");
+      }
+      
+      startGame();
+    }
+    
+    // ============ 게임 시작 ============
+    function startGame() {
+      video.play();
+      startTime = Date.now() / 1000;
+      isPlaying = true;
+      render();
+    }
+    
+    // ============ 렌더링 ============
+    function render() {
+      if (!isPlaying) return;
+      
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const now = Date.now() / 1000 - startTime;
+      
+      // 판정선
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.5)";
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(0, hitLineY);
+      ctx.lineTo(canvas.width, hitLineY);
+      ctx.stroke();
+      
+      // 노트 그리기
+      notes.forEach((note, index) => {
+        if (note.hit || note.missed) return;
+        
+        const laneIndex = LANE_KEYS.indexOf(note.key);
+        if (laneIndex === -1) return;
+        
+        const x = getLaneX(laneIndex);
+        const y = hitLineY - (note.time - now) * NOTE_SPEED;
+        
+        if (y < -NOTE_HEIGHT) return;
+        
+        if (y > hitLineY + JUDGMENT.MISS.threshold * NOTE_SPEED / 1000) {
+          handleMiss(index);
+          return;
+        }
+        
+        ctx.fillStyle = LANE_COLORS[laneIndex];
+        ctx.fillRect(x, y, NOTE_WIDTH, NOTE_HEIGHT);
+        ctx.strokeStyle = "white";
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x, y, NOTE_WIDTH, NOTE_HEIGHT);
+        
+        ctx.fillStyle = "white";
+        ctx.font = "bold 14px sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText(note.key, x + NOTE_WIDTH/2, y + NOTE_HEIGHT/2 + 5);
       });
+      
+      requestAnimationFrame(render);
+    }
+    
+    // ============ 판정 처리 ============
+    function handleKeyPress(key) {
+      const now = Date.now() / 1000 - startTime;
+      const keyUpper = key.toUpperCase();
+      
+      let closestNote = null;
+      let closestDiff = Infinity;
+      let closestIndex = -1;
+      
+      notes.forEach((note, index) => {
+        if (note.hit || note.missed) return;
+        if (note.key !== keyUpper) return;
+        
+        const diff = Math.abs(note.time - now) * 1000;
+        if (diff < closestDiff) {
+          closestDiff = diff;
+          closestNote = note;
+          closestIndex = index;
+        }
+      });
+      
+      if (!closestNote) return;
+      
+      if (closestDiff <= JUDGMENT.PERFECT.threshold) {
+        handleHit(closestIndex, JUDGMENT.PERFECT);
+      } else if (closestDiff <= JUDGMENT.GOOD.threshold) {
+        handleHit(closestIndex, JUDGMENT.GOOD);
+      } else if (closestDiff <= JUDGMENT.MISS.threshold) {
+        handleMiss(closestIndex);
+      }
+    }
+    
+    function handleHit(index, judgment) {
+      notes[index].hit = true;
+      combo++;
+      if (combo > maxCombo) maxCombo = combo;
+      score += judgment.score * (1 + combo * 0.01);
+      
+      updateUI();
+      showJudgment(judgment.text, judgment.color);
+    }
+    
+    function handleMiss(index) {
+      notes[index].missed = true;
+      combo = 0;
+      
+      updateUI();
+      showJudgment(JUDGMENT.MISS.text, JUDGMENT.MISS.color);
+      showCheerMessage();
+    }
+    
+    // ============ UI 업데이트 ============
+    function updateUI() {
+      scoreDisplay.textContent = "SCORE: " + Math.floor(score);
+      comboDisplay.textContent = "COMBO: " + combo;
+    }
+    
+    function showJudgment(text, color) {
+      judgmentDisplay.textContent = text;
+      judgmentDisplay.style.color = color;
+      judgmentDisplay.style.opacity = 1;
+      
+      setTimeout(() => {
+        judgmentDisplay.style.opacity = 0;
+      }, 300);
+    }
+    
+    function showCheerMessage() {
+      const msg = CHEER_MESSAGES[Math.floor(Math.random() * CHEER_MESSAGES.length)];
+      cheerMessage.textContent = msg;
+      cheerMessage.style.opacity = 1;
+      
+      setTimeout(() => {
+        cheerMessage.style.opacity = 0;
+      }, 1500);
+    }
+    
+    // ============ 키 입력 처리 ============
+    document.addEventListener("keydown", (e) => {
+      const key = e.key.toUpperCase();
+      if (LANE_KEYS.includes(key)) {
+        handleKeyPress(key);
+        
+        const hint = document.querySelector(`.key-hint[data-key="${key}"]`);
+        if (hint) hint.classList.add("active");
+      }
+    });
+    
+    document.addEventListener("keyup", (e) => {
+      const key = e.key.toUpperCase();
+      const hint = document.querySelector(`.key-hint[data-key="${key}"]`);
+      if (hint) hint.classList.remove("active");
+    });
+    
+    window.onload = loadNotes;
   </script>
 </body>
 </html>
