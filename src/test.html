@@ -90,6 +90,17 @@
     #start-btn:hover {
       background: #ff5252;
     }
+    
+    #loading {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 10;
+      color: white;
+      font-size: 24px;
+      display: none;
+    }
   </style>
 </head>
 <body>
@@ -101,6 +112,7 @@
     <div id="combo-display">COMBO: 0</div>
     <div id="judgment-display"></div>
     
+    <div id="loading">🎵 비트 분석 중... 잠시만 기다려주세요!</div>
     <button id="start-btn">▶ 시작하기</button>
     
     <div id="key-hints">
@@ -112,11 +124,8 @@
   </div>
   
   <script>
-    // ============ 테스트 곡 설정 (Google Drive) ============
-    const TEST_SONG = {
-      video: "https://drive.google.com/uc?export=download&id=1MYQzxXiMyLAV8icrJ9QZZSRUDKAwvq5F",
-      notes: "../songs/test_notes.txt"
-    };
+    // ============ Cloudinary 뮤비 URL ============
+    const VIDEO_URL = "https://res.cloudinary.com/danknjfhv/video/upload/v1766605968/%EC%99%9C%ED%81%B4%EB%A6%AD_%EB%A9%94%EC%9D%B4%ED%94%8C_AI_%EB%B3%B8%EC%84%AD_%EC%9C%A0%EC%A0%80%EB%93%A4%EC%9D%B4_%EB%AD%98_%ED%96%88%EB%8B%A4%EA%B3%A0_ooya98go318_url4h2.mp4";
     
     // ============ 효과음 설정 ============
     const SOUND_URL = {
@@ -137,6 +146,104 @@
         sound.play().catch(e => console.log("효과음 재생 실패:", e));
       }
     }
+    
+    // ============ 비트 감지 클래스 ============
+    class BeatDetector {
+      constructor(options = {}) {
+        this.threshold = options.threshold || 0.6;
+        this.minInterval = options.minInterval || 300;
+      }
+
+      async detectBeats(audioPath) {
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        
+        const response = await fetch(audioPath);
+        const arrayBuffer = await response.arrayBuffer();
+        const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+        
+        const monoData = this.convertToMono(audioBuffer);
+        const peaks = this.findPeaks(monoData, audioBuffer.sampleRate);
+        const notes = this.generateNotes(peaks);
+        
+        audioContext.close();
+        return notes;
+      }
+
+      convertToMono(audioBuffer) {
+        const numberOfChannels = audioBuffer.numberOfChannels;
+        
+        if (numberOfChannels === 1) {
+          return audioBuffer.getChannelData(0);
+        }
+        
+        const left = audioBuffer.getChannelData(0);
+        const right = audioBuffer.getChannelData(1);
+        const mono = new Float32Array(left.length);
+        
+        for (let i = 0; i < left.length; i++) {
+          mono[i] = (left[i] + right[i]) / 2;
+        }
+        
+        return mono;
+      }
+
+      findPeaks(monoData, sampleRate) {
+        const peaks = [];
+        const chunkSize = Math.floor(sampleRate * 0.05);
+        const minSamples = Math.floor(sampleRate * this.minInterval / 1000);
+        
+        let lastPeakIndex = -minSamples;
+        
+        let totalSum = 0;
+        for (let i = 0; i < monoData.length; i++) {
+          totalSum += Math.abs(monoData[i]);
+        }
+        const avgVolume = totalSum / monoData.length;
+        const dynamicThreshold = avgVolume * (1 + this.threshold);
+        
+        for (let i = 0; i < monoData.length; i += chunkSize) {
+          let chunkSum = 0;
+          const end = Math.min(i + chunkSize, monoData.length);
+          
+          for (let j = i; j < end; j++) {
+            chunkSum += Math.abs(monoData[j]);
+          }
+          
+          const chunkAvg = chunkSum / (end - i);
+          
+          if (chunkAvg > dynamicThreshold && (i - lastPeakIndex) > minSamples) {
+            const timeInSeconds = i / sampleRate;
+            peaks.push(timeInSeconds);
+            lastPeakIndex = i;
+          }
+        }
+        
+        return peaks;
+      }
+
+      generateNotes(peaks) {
+        const keys = ['D', 'F', 'J', 'K'];
+        const notes = [];
+        
+        for (let i = 0; i < peaks.length; i++) {
+          const keyIndex = i % keys.length;
+          
+          notes.push({
+            time: peaks[i],
+            key: keys[keyIndex]
+          });
+        }
+        
+        return notes;
+      }
+    }
+
+    // 난이도 (초보용 = EASY)
+    const DIFFICULTY = {
+      EASY: { threshold: 0.8, minInterval: 500 },
+      NORMAL: { threshold: 0.5, minInterval: 300 },
+      HARD: { threshold: 0.3, minInterval: 150 }
+    };
     
     // ============ 게임 설정 ============
     const LANE_KEYS = ['D', 'F', 'J', 'K'];
@@ -168,6 +275,7 @@
     const comboDisplay = document.getElementById("combo-display");
     const judgmentDisplay = document.getElementById("judgment-display");
     const startBtn = document.getElementById("start-btn");
+    const loadingDiv = document.getElementById("loading");
     
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
@@ -184,31 +292,40 @@
     // ============ 초기화 ============
     async function init() {
       loadSounds();
-      video.src = TEST_SONG.video;
+      video.src = VIDEO_URL;
+      video.crossOrigin = "anonymous";
+      console.log("초기화 완료!");
+    }
+    
+    // ============ 비트 분석 & 게임 시작 ============
+    async function analyzeAndStart() {
+      startBtn.style.display = "none";
+      loadingDiv.style.display = "block";
       
       try {
-        const response = await fetch(TEST_SONG.notes);
-        if (response.ok) {
-          const text = await response.text();
-          notes = text.split("\n").filter(line => line.trim()).map(line => {
-            const [time, key] = line.split(",");
-            return { 
-              time: parseFloat(time), 
-              key: key.trim().toUpperCase(),
-              hit: false,
-              missed: false
-            };
-          });
-          console.log("노트 로드 완료:", notes.length, "개");
-        }
+        // 비트 감지 (초보용 = EASY)
+        const detector = new BeatDetector(DIFFICULTY.EASY);
+        const detectedNotes = await detector.detectBeats(VIDEO_URL);
+        
+        notes = detectedNotes.map(note => ({
+          ...note,
+          hit: false,
+          missed: false
+        }));
+        
+        console.log("비트 분석 완료! 노트 수:", notes.length);
+        
+        loadingDiv.style.display = "none";
+        startGame();
+        
       } catch (e) {
-        console.log("노트 파일 로드 실패:", e);
+        console.error("비트 분석 실패:", e);
+        loadingDiv.textContent = "⚠️ 분석 실패! 페이지 새로고침 해주세요.";
       }
     }
     
     // ============ 게임 시작 ============
     function startGame() {
-      startBtn.style.display = "none";
       video.play();
       startTime = Date.now() / 1000;
       isPlaying = true;
@@ -347,7 +464,7 @@
     });
     
     // ============ 시작 ============
-    startBtn.addEventListener("click", startGame);
+    startBtn.addEventListener("click", analyzeAndStart);
     window.onload = init;
   </script>
 </body>
