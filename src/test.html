@@ -54,14 +54,14 @@
     }
     
     .key-hint {
-      width: 60px;
-      height: 60px;
+      width: 80px;
+      height: 80px;
       border: 3px solid white;
       border-radius: 10px;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 24px;
+      font-size: 32px;
       color: white;
       background: rgba(0,0,0,0.5);
       transition: background 0.1s;
@@ -118,8 +118,6 @@
     <div id="key-hints">
       <div class="key-hint" data-key="D">D</div>
       <div class="key-hint" data-key="F">F</div>
-      <div class="key-hint" data-key="J">J</div>
-      <div class="key-hint" data-key="K">K</div>
     </div>
   </div>
   
@@ -136,13 +134,13 @@
     
     function loadSounds() {
       hitSound = new Audio(SOUND_URL.hit);
-      hitSound.volume = 0.5;
+      hitSound.volume = 1.0;
     }
     
     function playHitSound() {
       if (hitSound) {
         const sound = hitSound.cloneNode();
-        sound.volume = 0.5;
+        sound.volume = 1.0;
         sound.play().catch(e => console.log("효과음 재생 실패:", e));
       }
     }
@@ -222,7 +220,7 @@
       }
 
       generateNotes(peaks) {
-        const keys = ['D', 'F', 'J', 'K'];
+        const keys = ['D', 'F'];
         const notes = [];
         
         for (let i = 0; i < peaks.length; i++) {
@@ -245,11 +243,11 @@
       HARD: { threshold: 0.3, minInterval: 150 }
     };
     
-    // ============ 게임 설정 ============
-    const LANE_KEYS = ['D', 'F', 'J', 'K'];
-    const LANE_COLORS = ['#ff6b6b', '#ffd93d', '#6bcb77', '#4d96ff'];
-    const NOTE_WIDTH = 60;
-    const NOTE_HEIGHT = 20;
+    // ============ 게임 설정 (2키 모드) ============
+    const LANE_KEYS = ['D', 'F'];
+    const LANE_COLORS = ['#ff6b6b', '#4d96ff'];
+    const NOTE_WIDTH = 80;
+    const NOTE_HEIGHT = 25;
     const HIT_LINE_Y_RATIO = 0.85;
     const NOTE_SPEED = 300;
     
@@ -284,9 +282,9 @@
     
     // ============ 레인 X 좌표 계산 ============
     function getLaneX(laneIndex) {
-      const totalWidth = LANE_KEYS.length * (NOTE_WIDTH + 20);
+      const totalWidth = LANE_KEYS.length * (NOTE_WIDTH + 30);
       const startX = (canvas.width - totalWidth) / 2;
-      return startX + laneIndex * (NOTE_WIDTH + 20);
+      return startX + laneIndex * (NOTE_WIDTH + 30);
     }
     
     // ============ 초기화 ============
@@ -369,7 +367,7 @@
         ctx.strokeRect(x, y, NOTE_WIDTH, NOTE_HEIGHT);
         
         ctx.fillStyle = "white";
-        ctx.font = "bold 14px sans-serif";
+        ctx.font = "bold 16px sans-serif";
         ctx.textAlign = "center";
         ctx.fillText(note.key, x + NOTE_WIDTH/2, y + NOTE_HEIGHT/2 + 5);
       });
