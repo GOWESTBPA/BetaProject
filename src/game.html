@@ -8,7 +8,6 @@
     #video-bg { position:absolute; top:0; left:0; width:100%; height:100%; object-fit:cover; z-index:0; }
     #notes-layer { position:absolute; top:0; left:0; width:100%; height:100%; z-index:1; pointer-events:none; }
     
-    /* UI 오버레이 */
     #ui-layer {
       position: absolute;
       top: 0; left: 0;
@@ -71,19 +70,6 @@
     .key-hint.active {
       background: rgba(255,255,0,0.7);
     }
-    
-    /* 응원 메시지 */
-    #cheer-message {
-      position: absolute;
-      bottom: 160px;
-      left: 50%;
-      transform: translateX(-50%);
-      font-size: 28px;
-      color: #00ff88;
-      text-shadow: 2px 2px 4px black;
-      opacity: 0;
-      transition: opacity 0.3s;
-    }
   </style>
 </head>
 <body>
@@ -94,7 +80,6 @@
     <div id="score-display">SCORE: 0</div>
     <div id="combo-display">COMBO: 0</div>
     <div id="judgment-display"></div>
-    <div id="cheer-message"></div>
     
     <div id="key-hints">
       <div class="key-hint" data-key="D">D</div>
@@ -105,6 +90,26 @@
   </div>
   
   <script>
+    // ============ 효과음 설정 ============
+    const SOUND_URL = {
+      hit: "https://drive.google.com/uc?export=download&id=1gOXtYKHFZpHdjSKhNERN3Ea8x2kcG5Px"
+    };
+    
+    let hitSound = null;
+    
+    function loadSounds() {
+      hitSound = new Audio(SOUND_URL.hit);
+      hitSound.volume = 0.5;
+    }
+    
+    function playHitSound() {
+      if (hitSound) {
+        const sound = hitSound.cloneNode();
+        sound.volume = 0.5;
+        sound.play().catch(e => console.log("효과음 재생 실패:", e));
+      }
+    }
+    
     // ============ 게임 설정 ============
     const LANE_KEYS = ['D', 'F', 'J', 'K'];
     const LANE_COLORS = ['#ff6b6b', '#ffd93d', '#6bcb77', '#4d96ff'];
@@ -113,21 +118,11 @@
     const HIT_LINE_Y_RATIO = 0.85;
     const NOTE_SPEED = 300;
     
-    // 판정 설정 (넉넉하게!)
     const JUDGMENT = {
       PERFECT: { threshold: 200, score: 100, color: '#ffff00', text: 'PERFECT!' },
       GOOD: { threshold: 400, score: 50, color: '#00ff00', text: 'GOOD!' },
       MISS: { threshold: 600, score: 0, color: '#ff0000', text: 'MISS' }
     };
-    
-    // 응원 메시지
-    const CHEER_MESSAGES = [
-      "괜찮아! 😊",
-      "다음엔 잘 할 수 있어!",
-      "화이팅! 💪",
-      "잘하고 있어!",
-      "음악을 즐기자! 🎵"
-    ];
     
     // ============ 게임 상태 ============
     let score = 0;
@@ -144,7 +139,6 @@
     const scoreDisplay = document.getElementById("score-display");
     const comboDisplay = document.getElementById("combo-display");
     const judgmentDisplay = document.getElementById("judgment-display");
-    const cheerMessage = document.getElementById("cheer-message");
     const keyHints = document.querySelectorAll(".key-hint");
     
     canvas.width = window.innerWidth;
@@ -161,6 +155,8 @@
     
     // ============ 노트 로드 ============
     async function loadNotes() {
+      loadSounds();
+      
       const song = window.opener ? window.opener.songData : null;
       
       if (!song) {
@@ -206,7 +202,6 @@
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       const now = Date.now() / 1000 - startTime;
       
-      // 판정선
       ctx.strokeStyle = "rgba(255, 255, 255, 0.5)";
       ctx.lineWidth = 3;
       ctx.beginPath();
@@ -214,7 +209,6 @@
       ctx.lineTo(canvas.width, hitLineY);
       ctx.stroke();
       
-      // 노트 그리기
       notes.forEach((note, index) => {
         if (note.hit || note.missed) return;
         
@@ -284,6 +278,7 @@
       if (combo > maxCombo) maxCombo = combo;
       score += judgment.score * (1 + combo * 0.01);
       
+      playHitSound();
       updateUI();
       showJudgment(judgment.text, judgment.color);
     }
@@ -294,7 +289,6 @@
       
       updateUI();
       showJudgment(JUDGMENT.MISS.text, JUDGMENT.MISS.color);
-      showCheerMessage();
     }
     
     // ============ UI 업데이트 ============
@@ -311,16 +305,6 @@
       setTimeout(() => {
         judgmentDisplay.style.opacity = 0;
       }, 300);
-    }
-    
-    function showCheerMessage() {
-      const msg = CHEER_MESSAGES[Math.floor(Math.random() * CHEER_MESSAGES.length)];
-      cheerMessage.textContent = msg;
-      cheerMessage.style.opacity = 1;
-      
-      setTimeout(() => {
-        cheerMessage.style.opacity = 0;
-      }, 1500);
     }
     
     // ============ 키 입력 처리 ============
