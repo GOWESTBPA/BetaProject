@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>플레이 화면</title>
+  <style>
+    body { margin:0; overflow:hidden; background:black; }
+    #video-bg { position:absolute; top:0; left:0; width:100%; height:100%; object-fit:cover; filter:blur(5px); z-index:0; }
+    #notes-layer { position:absolute; top:0; left:0; width:100%; height:100%; z-index:1; pointer-events:none; }
+  </style>
+</head>
+<body>
+  <video id="video-bg" autoplay muted></video>
+  <canvas id="notes-layer"></canvas>
+  <script>
+    const song = window.opener.songData;
+    const video = document.getElementById("video-bg");
+    const canvas = document.getElementById("notes-layer");
+    const ctx = canvas.getContext("2d");
+
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+
+    video.src = "../songs/" + song.file;
+    video.play();
+
+    fetch("../songs/" + song.notes)
+      .then(res => res.text())
+      .then(text => {
+        const notes = text.split("\n").map(line => {
+          const [time,key] = line.split(",");
+          return {time: parseFloat(time), key};
+        });
+
+        const startTime = Date.now()/1000;
+        function render() {
+          ctx.clearRect(0,0,canvas.width,canvas.height);
+          const now = Date.now()/1000 - startTime;
+          notes.forEach(note => {
+            const y = (note.time - now) * 200 + canvas.height/2;
+            if (y > 0 && y < canvas.height) {
+              ctx.fillStyle = "red";
+              ctx.fillRect(100, y, 50, 20);
+              ctx.fillText(note.key, 120, y+15);
+            }
+          });
+          requestAnimationFrame(render);
+        }
+        render();
+      });
+  </script>
+</body>
+</html>
