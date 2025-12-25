@@ -348,7 +348,7 @@
       }
     }
     
-    // ========== BeatDetector 클래스 ==========
+    // ========== BeatDetector 클래스 (롱노트 지원) ==========
     class BeatDetector {
       constructor(options = {}) {
         this.threshold = options.threshold || 0.6;
@@ -357,6 +357,7 @@
         this.vocalHighFreq = options.vocalHighFreq || 3000;
         this.bassLowFreq = options.bassLowFreq || 20;
         this.bassHighFreq = options.bassHighFreq || 150;
+        this.longNoteThreshold = options.longNoteThreshold || 0.5; // 0.5초 이상이면 롱노트
       }
 
       async detectBeats(audioPath) {
@@ -368,9 +369,9 @@
         const sampleRate = audioBuffer.sampleRate;
         const monoData = this.convertToMono(audioBuffer);
         
-        const vocalPeaks = this.findFrequencyPeaks(monoData, sampleRate, this.vocalLowFreq, this.vocalHighFreq, 'D');
-        const bassPeaks = this.findFrequencyPeaks(monoData, sampleRate, this.bassLowFreq, this.bassHighFreq, 'F');
-        const volumePeaks = this.findVolumePeaks(monoData, sampleRate);
+        const vocalPeaks = this.findFrequencyPeaksWithDuration(monoData, sampleRate, this.vocalLowFreq, this.vocalHighFreq, 'D');
+        const bassPeaks = this.findFrequencyPeaksWithDuration(monoData, sampleRate, this.bassLowFreq, this.bassHighFreq, 'F');
+        const volumePeaks = this.findVolumePeaksWithDuration(monoData, sampleRate);
         
         const allPeaks = [...vocalPeaks, ...bassPeaks, ...volumePeaks];
         allPeaks.sort((a, b) => a.time - b.time);
@@ -390,7 +391,7 @@
         return mono;
       }
 
-      findFrequencyPeaks(monoData, sampleRate, lowFreq, highFreq, key) {
+      findFrequencyPeaksWithDuration(monoData, sampleRate, lowFreq, highFreq, key) {
         const peaks = [];
         const fftSize = 2048;
         const hopSize = Math.floor(sampleRate * 0.05);
@@ -420,7 +421,22 @@
               curr.energy > next.energy && 
               curr.energy > dynamicThreshold &&
               (curr.sample - lastPeakSample) > minSamples) {
-            peaks.push({ time: curr.sample / sampleRate, key });
+            
+            // 롱노트 duration 계산: 에너지가 임계값 이상인 구간 길이
+            let duration = 0;
+            let j = i + 1;
+            while (j < energyHistory.length && energyHistory[j].energy > dynamicThreshold * 0.7) {
+              j++;
+            }
+            const endSample = energyHistory[Math.min(j, energyHistory.length - 1)].sample;
+            duration = (endSample - curr.sample) / sampleRate;
+            
+            // 0.5초 이상이면 롱노트, 아니면 일반노트
+            if (duration < this.longNoteThreshold) duration = 0;
+            // 최대 3초로 제한
+            if (duration > 3) duration = 3;
+            
+            peaks.push({ time: curr.sample / sampleRate, key, duration });
             lastPeakSample = curr.sample;
           }
         }
@@ -428,7 +444,7 @@
         return peaks;
       }
 
-      findVolumePeaks(monoData, sampleRate) {
+      findVolumePeaksWithDuration(monoData, sampleRate) {
         const peaks = [];
         const chunkSize = Math.floor(sampleRate * 0.1);
         const minSamples = Math.floor(sampleRate * this.minInterval / 1000);
@@ -447,7 +463,8 @@
           for (let j = i; j < end; j++) chunkSum += Math.abs(monoData[j]);
           
           if ((chunkSum / (end - i)) > dynamicThreshold && (i - lastPeakIndex) > minSamples) {
-            peaks.push({ time: i / sampleRate, key: keys[keyIndex % 2] });
+            // 볼륨 피크는 일반노트로만 처리
+            peaks.push({ time: i / sampleRate, key: keys[keyIndex % 2], duration: 0 });
             keyIndex++;
             lastPeakIndex = i;
           }
@@ -464,7 +481,10 @@
         
         for (let i = 1; i < notes.length; i++) {
           const lastNote = filtered[filtered.length - 1];
-          if (notes[i].time - lastNote.time >= minGap) {
+          // 롱노트인 경우 duration도 고려
+          const lastNoteEnd = lastNote.time + (lastNote.duration || 0);
+          
+          if (notes[i].time - lastNoteEnd >= minGap) {
             if (notes[i].key === lastNote.key) {
               notes[i].key = lastNote.key === 'D' ? 'F' : 'D';
             }
@@ -496,6 +516,10 @@
     let perfectCount = 0, goodCount = 0, missCount = 0;
     let notes = [], isPlaying = false, hitLineY = 0, noteSpeed = 0, gameStartTime = 0;
     let currentSong = null;
+    
+    // 롱노트 상태 추적
+    let heldKeys = { 'D': false, 'F': false };
+    let activeLongNotes = {}; // 현재 홀딩 중인 롱노트 인덱스
     
     // ========== DOM 요소 ==========
     const video = document.getElementById("video-bg");
@@ -529,13 +553,14 @@
     function resetGame() {
       score = combo = maxCombo = perfectCount = goodCount = missCount = 0;
       notes = []; isPlaying = false;
+      heldKeys = { 'D': false, 'F': false };
+      activeLongNotes = {};
       updateUI();
     }
     
     async function startGameFlow() {
       resetGame();
       
-      // localStorage에서 곡 정보 가져오기
       const songData = localStorage.getItem('selectedSong');
       if (!songData) {
         loadingDiv.textContent = "⚠️ 곡 정보가 없습니다. 곡 선택 화면으로 돌아가세요.";
@@ -555,9 +580,16 @@
         const detector = new BeatDetector(DIFFICULTY.HARD);
         const detectedNotes = await detector.detectBeats(currentSong.videoUrl);
         notes = detectedNotes.map(note => ({
-          ...note, time: note.time + COUNTDOWN_TIME + NOTE_TRAVEL_TIME, hit: false, missed: false
+          ...note, 
+          time: note.time + COUNTDOWN_TIME + NOTE_TRAVEL_TIME, 
+          hit: false, 
+          missed: false,
+          duration: note.duration || 0,
+          holdProgress: 0, // 롱노트 홀딩 진행도
+          holding: false   // 현재 홀딩 중인지
         }));
         console.log("감지된 노트 수:", notes.length);
+        console.log("롱노트 수:", notes.filter(n => n.duration > 0).length);
         loadingDiv.style.display = "none";
         video.onended = showResult;
         startCountdown();
@@ -601,11 +633,13 @@
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       const currentTime = (Date.now() / 1000) - gameStartTime;
       
+      // 레인 배경
       LANE_KEYS.forEach((key, index) => {
         ctx.fillStyle = 'rgba(255,255,255,0.05)';
         ctx.fillRect(getLaneX(index) - 5, 0, NOTE_WIDTH + 10, canvas.height);
       });
       
+      // 판정선
       ctx.strokeStyle = "rgba(255, 255, 255, 0.8)";
       ctx.lineWidth = 4;
       ctx.beginPath();
@@ -613,47 +647,183 @@
       ctx.lineTo(getLaneX(1) + NOTE_WIDTH + 20, hitLineY);
       ctx.stroke();
       
+      // 롱노트 홀딩 업데이트
+      updateLongNotes(currentTime);
+      
+      // 노트 렌더링
       notes.forEach((note, index) => {
         if (note.hit || note.missed) return;
         const laneIndex = LANE_KEYS.indexOf(note.key);
         if (laneIndex === -1) return;
         const x = getLaneX(laneIndex);
         const y = hitLineY - ((note.time - currentTime) * noteSpeed);
-        if (y < -NOTE_HEIGHT) return;
-        if (y > hitLineY + (JUDGMENT.MISS.threshold / 1000) * noteSpeed) { handleMiss(index); return; }
         
-        ctx.fillStyle = LANE_COLORS[laneIndex];
-        ctx.beginPath();
-        ctx.roundRect(x, y, NOTE_WIDTH, NOTE_HEIGHT, 8);
-        ctx.fill();
-        ctx.strokeStyle = "white";
-        ctx.lineWidth = 2;
-        ctx.stroke();
-        ctx.fillStyle = "white";
-        ctx.font = "bold 18px sans-serif";
-        ctx.textAlign = "center";
-        ctx.fillText(note.key, x + NOTE_WIDTH/2, y + NOTE_HEIGHT/2 + 6);
+        // 롱노트인 경우
+        if (note.duration > 0) {
+          const noteLength = note.duration * noteSpeed;
+          const noteTop = y - noteLength;
+          
+          // 화면 밖이면 스킵
+          if (noteTop > hitLineY + (JUDGMENT.MISS.threshold / 1000) * noteSpeed) {
+            if (!note.holding) handleMiss(index);
+            return;
+          }
+          if (y < -NOTE_HEIGHT) return;
+          
+          // 롱노트 본체 (길게)
+          const gradient = ctx.createLinearGradient(x, noteTop, x, y);
+          gradient.addColorStop(0, LANE_COLORS[laneIndex]);
+          gradient.addColorStop(1, LANE_COLORS[laneIndex] + 'aa');
+          ctx.fillStyle = gradient;
+          ctx.beginPath();
+          ctx.roundRect(x, noteTop, NOTE_WIDTH, noteLength + NOTE_HEIGHT, 8);
+          ctx.fill();
+          
+          // 홀딩 중이면 진행도 표시
+          if (note.holding) {
+            const progressHeight = noteLength * note.holdProgress;
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+            ctx.beginPath();
+            ctx.roundRect(x, y - progressHeight, NOTE_WIDTH, progressHeight + NOTE_HEIGHT, 8);
+            ctx.fill();
+          }
+          
+          // 테두리
+          ctx.strokeStyle = "white";
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.roundRect(x, noteTop, NOTE_WIDTH, noteLength + NOTE_HEIGHT, 8);
+          ctx.stroke();
+          
+          // 롱노트 표시 (HOLD)
+          ctx.fillStyle = "white";
+          ctx.font = "bold 14px sans-serif";
+          ctx.textAlign = "center";
+          ctx.fillText("HOLD", x + NOTE_WIDTH/2, noteTop + 20);
+          ctx.fillText(note.key, x + NOTE_WIDTH/2, y + NOTE_HEIGHT/2 + 6);
+          
+        } else {
+          // 일반 노트
+          if (y < -NOTE_HEIGHT) return;
+          if (y > hitLineY + (JUDGMENT.MISS.threshold / 1000) * noteSpeed) { handleMiss(index); return; }
+          
+          ctx.fillStyle = LANE_COLORS[laneIndex];
+          ctx.beginPath();
+          ctx.roundRect(x, y, NOTE_WIDTH, NOTE_HEIGHT, 8);
+          ctx.fill();
+          ctx.strokeStyle = "white";
+          ctx.lineWidth = 2;
+          ctx.stroke();
+          ctx.fillStyle = "white";
+          ctx.font = "bold 18px sans-serif";
+          ctx.textAlign = "center";
+          ctx.fillText(note.key, x + NOTE_WIDTH/2, y + NOTE_HEIGHT/2 + 6);
+        }
       });
       
       requestAnimationFrame(render);
+    }
+    
+    function updateLongNotes(currentTime) {
+      notes.forEach((note, index) => {
+        if (note.hit || note.missed || note.duration <= 0) return;
+        
+        // 롱노트 홀딩 중인 경우
+        if (note.holding && heldKeys[note.key]) {
+          const holdTime = currentTime - note.holdStartTime;
+          note.holdProgress = Math.min(holdTime / note.duration, 1);
+          
+          // 홀딩 완료
+          if (note.holdProgress >= 1) {
+            handleLongNoteComplete(index);
+          }
+        }
+        
+        // 홀딩 중인데 키를 뗀 경우
+        if (note.holding && !heldKeys[note.key]) {
+          if (note.holdProgress < 0.5) {
+            // 50% 미만이면 MISS
+            handleMiss(index);
+          } else {
+            // 50% 이상이면 GOOD
+            handleLongNotePartial(index);
+          }
+        }
+      });
     }
     
     function handleKeyPress(key) {
       if (!isPlaying) return;
       const currentTime = (Date.now() / 1000) - gameStartTime;
       const keyUpper = key.toUpperCase();
+      
       let closestNote = null, closestDiff = Infinity, closestIndex = -1;
       
       notes.forEach((note, index) => {
-        if (note.hit || note.missed || note.key !== keyUpper) return;
+        if (note.hit || note.missed || note.key !== keyUpper || note.holding) return;
         const diff = Math.abs(note.time - currentTime) * 1000;
         if (diff < closestDiff) { closestDiff = diff; closestNote = note; closestIndex = index; }
       });
       
       if (!closestNote) return;
-      if (closestDiff <= JUDGMENT.PERFECT.threshold) { handleHit(closestIndex, JUDGMENT.PERFECT); perfectCount++; }
-      else if (closestDiff <= JUDGMENT.GOOD.threshold) { handleHit(closestIndex, JUDGMENT.GOOD); goodCount++; }
-      else if (closestDiff <= JUDGMENT.MISS.threshold) { handleMiss(closestIndex); }
+      
+      // 롱노트인 경우
+      if (closestNote.duration > 0) {
+        if (closestDiff <= JUDGMENT.GOOD.threshold) {
+          // 롱노트 홀딩 시작
+          notes[closestIndex].holding = true;
+          notes[closestIndex].holdStartTime = currentTime;
+          activeLongNotes[keyUpper] = closestIndex;
+          playHitSound();
+          showJudgment("HOLD!", '#00ffff');
+        } else if (closestDiff <= JUDGMENT.MISS.threshold) {
+          handleMiss(closestIndex);
+        }
+      } else {
+        // 일반 노트
+        if (closestDiff <= JUDGMENT.PERFECT.threshold) { 
+          handleHit(closestIndex, JUDGMENT.PERFECT); 
+          perfectCount++; 
+        }
+        else if (closestDiff <= JUDGMENT.GOOD.threshold) { 
+          handleHit(closestIndex, JUDGMENT.GOOD); 
+          goodCount++; 
+        }
+        else if (closestDiff <= JUDGMENT.MISS.threshold) { 
+          handleMiss(closestIndex); 
+        }
+      }
+    }
+    
+    function handleKeyRelease(key) {
+      const keyUpper = key.toUpperCase();
+      
+      // 롱노트 홀딩 중이었다면 updateLongNotes에서 처리됨
+    }
+    
+    function handleLongNoteComplete(index) {
+      notes[index].hit = true;
+      notes[index].holding = false;
+      combo++;
+      if (combo > maxCombo) maxCombo = combo;
+      score += JUDGMENT.PERFECT.score * 2 * (1 + combo * 0.01); // 롱노트는 2배 점수
+      perfectCount++;
+      delete activeLongNotes[notes[index].key];
+      playHitSound();
+      updateUI();
+      showJudgment(JUDGMENT.PERFECT.text, JUDGMENT.PERFECT.color);
+    }
+    
+    function handleLongNotePartial(index) {
+      notes[index].hit = true;
+      notes[index].holding = false;
+      combo++;
+      if (combo > maxCombo) maxCombo = combo;
+      score += JUDGMENT.GOOD.score * (1 + combo * 0.01);
+      goodCount++;
+      delete activeLongNotes[notes[index].key];
+      updateUI();
+      showJudgment(JUDGMENT.GOOD.text, JUDGMENT.GOOD.color);
     }
     
     function handleHit(index, judgment) {
@@ -668,6 +838,10 @@
     
     function handleMiss(index) {
       notes[index].missed = true;
+      notes[index].holding = false;
+      if (activeLongNotes[notes[index].key] === index) {
+        delete activeLongNotes[notes[index].key];
+      }
       combo = 0;
       missCount++;
       updateUI();
@@ -710,7 +884,10 @@
     document.addEventListener("keydown", (e) => {
       const key = e.key.toUpperCase();
       if (LANE_KEYS.includes(key)) {
-        handleKeyPress(key);
+        if (!heldKeys[key]) { // 키 반복 방지
+          heldKeys[key] = true;
+          handleKeyPress(key);
+        }
         const hint = document.querySelector(`.key-hint[data-key="${key}"]`);
         if (hint) hint.classList.add("active");
       }
@@ -718,6 +895,10 @@
     
     document.addEventListener("keyup", (e) => {
       const key = e.key.toUpperCase();
+      if (LANE_KEYS.includes(key)) {
+        heldKeys[key] = false;
+        handleKeyRelease(key);
+      }
       const hint = document.querySelector(`.key-hint[data-key="${key}"]`);
       if (hint) hint.classList.remove("active");
     });
