@@ -262,6 +262,110 @@
       50% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
       100% { transform: translate(-50%, -50%) scale(0.9); opacity: 0.8; }
     }
+    
+    /* ========== 결과 화면 ========== */
+    #result-screen {
+      display: none;
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: rgba(0, 0, 0, 0.9);
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+    
+    #result-screen.active {
+      display: flex;
+    }
+    
+    #result-screen h2 {
+      font-size: 60px;
+      color: #ffd93d;
+      margin-bottom: 40px;
+      text-shadow: 0 0 30px rgba(255, 217, 61, 0.5);
+    }
+    
+    .result-box {
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 20px;
+      padding: 40px 60px;
+      text-align: center;
+      margin-bottom: 30px;
+    }
+    
+    .result-score {
+      font-size: 48px;
+      font-weight: bold;
+      color: white;
+      margin-bottom: 20px;
+    }
+    
+    .result-stats {
+      display: flex;
+      gap: 40px;
+      justify-content: center;
+      margin-bottom: 20px;
+    }
+    
+    .stat-item {
+      text-align: center;
+    }
+    
+    .stat-label {
+      font-size: 16px;
+      color: #aaa;
+      margin-bottom: 5px;
+    }
+    
+    .stat-value {
+      font-size: 28px;
+      font-weight: bold;
+    }
+    
+    .stat-value.perfect { color: #ffff00; }
+    .stat-value.good { color: #00ff00; }
+    .stat-value.miss { color: #ff0000; }
+    .stat-value.combo { color: #ffd93d; }
+    
+    .result-buttons {
+      display: flex;
+      gap: 20px;
+      margin-top: 20px;
+    }
+    
+    .result-btn {
+      padding: 15px 40px;
+      font-size: 20px;
+      font-weight: bold;
+      border: none;
+      border-radius: 50px;
+      cursor: pointer;
+      transition: all 0.3s;
+    }
+    
+    .result-btn.retry {
+      background: linear-gradient(135deg, #4d96ff, #6ba8ff);
+      color: white;
+      box-shadow: 0 5px 20px rgba(77, 150, 255, 0.4);
+    }
+    
+    .result-btn.retry:hover {
+      transform: scale(1.05);
+      box-shadow: 0 8px 30px rgba(77, 150, 255, 0.6);
+    }
+    
+    .result-btn.back {
+      background: linear-gradient(135deg, #ff6b6b, #ff8e8e);
+      color: white;
+      box-shadow: 0 5px 20px rgba(255, 107, 107, 0.4);
+    }
+    
+    .result-btn.back:hover {
+      transform: scale(1.05);
+      box-shadow: 0 8px 30px rgba(255, 107, 107, 0.6);
+    }
   </style>
 </head>
 <body>
@@ -270,10 +374,10 @@
     <h1>🎵 리듬게임</h1>
     <div id="song-list">
       <div class="song-card selected" data-index="0">
-        <img class="song-thumbnail" src="https://res.cloudinary.com/danknjfhv/video/upload/v1766605968/%EC%99%9C%ED%81%B4%EB%A6%AD_%EB%A9%94%EC%9D%B4%ED%94%8C_AI_%EB%B3%B8%EC%84%AD_%EC%9C%A0%EC%A0%80%EB%93%A4%EC%9D%B4_%EB%AD%98_%ED%96%88%EB%8B%A4%EA%B3%A0_ooya98go318_url4h2.jpg" onerror="this.style.background='linear-gradient(135deg, #ff6b6b, #4d96ff)'">
+        <img class="song-thumbnail" src="https://res.cloudinary.com/danknjfhv/image/upload/v1766655396/hq720_1_dwlxnv.jpg">
         <div class="song-info">
-          <div class="song-title">왜클릭 메이플 AI 본섭</div>
-          <div class="song-artist">유저들이 뭘 했다고</div>
+          <div class="song-title">왜클릭 메이플 AI 본섭 유저들이 뭘 했다고</div>
+          <div class="song-artist">알 수 없음</div>
         </div>
       </div>
     </div>
@@ -302,15 +406,57 @@
     </div>
   </div>
   
+  <!-- 결과 화면 -->
+  <div id="result-screen">
+    <h2>🎉 결과 🎉</h2>
+    <div class="result-box">
+      <div class="result-score" id="final-score">SCORE: 0</div>
+      <div class="result-stats">
+        <div class="stat-item">
+          <div class="stat-label">PERFECT</div>
+          <div class="stat-value perfect" id="perfect-count">0</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-label">GOOD</div>
+          <div class="stat-value good" id="good-count">0</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-label">MISS</div>
+          <div class="stat-value miss" id="miss-count">0</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-label">MAX COMBO</div>
+          <div class="stat-value combo" id="max-combo">0</div>
+        </div>
+      </div>
+    </div>
+    <div class="result-buttons">
+      <button class="result-btn retry" id="retry-btn">🔄 다시 플레이</button>
+      <button class="result-btn back" id="back-btn">🏠 곡 선택</button>
+    </div>
+  </div>
+  
   <script>
     // ========== 곡 데이터 ==========
     const SONGS = [
       {
-        title: "왜클릭 메이플 AI 본섭",
-        artist: "유저들이 뭘 했다고",
-        videoUrl: "https://res.cloudinary.com/danknjfhv/video/upload/v1766605968/%EC%99%9C%ED%81%B4%EB%A6%AD_%EB%A9%94%EC%9D%B4%ED%94%8C_AI_%EB%B3%B8%EC%84%AD_%EC%9C%A0%EC%A0%80%EB%93%A4%EC%9D%B4_%EB%AD%98_%ED%96%88%EB%8B%A4%EA%B3%A0_ooya98go318_url4h2.mp4"
+        title: "왜클릭 메이플 AI 본섭 유저들이 뭘 했다고",
+        artist: "알 수 없음",
+        videoUrl: "https://res.cloudinary.com/danknjfhv/video/upload/v1766605968/%EC%99%9C%ED%81%B4%EB%A6%AD_%EB%A9%94%EC%9D%B4%ED%94%8C_AI_%EB%B3%B8%EC%84%AD_%EC%9C%A0%EC%A0%80%EB%93%A4%EC%9D%B4_%EB%AD%98_%ED%96%88%EB%8B%A4%EA%B3%A0_ooya98go318_url4h2.mp4",
+        thumbnailUrl: "https://res.cloudinary.com/danknjfhv/image/upload/v1766655396/hq720_1_dwlxnv.jpg"
       }
     ];
+    
+    // 파일명에서 아티스트/제목 파싱: [아티스트] 곡 제목
+    function parseFileName(fileName) {
+      const decoded = decodeURIComponent(fileName);
+      const nameOnly = decoded.replace(/\.[^/.]+$/, "");
+      const match = nameOnly.match(/^\[(.+?)\]\s*(.+)$/);
+      if (match) {
+        return { artist: match[1].trim(), title: match[2].trim() };
+      }
+      return { artist: "알 수 없음", title: nameOnly.replace(/_/g, ' ') };
+    }
     
     let selectedSongIndex = 0;
     
@@ -327,10 +473,7 @@
         const response = await fetch(SOUND_URL.hit);
         const arrayBuffer = await response.arrayBuffer();
         hitSoundBuffer = await audioContext.decodeAudioData(arrayBuffer);
-        console.log("효과음 로드 완료!");
-      } catch (e) {
-        console.log("효과음 로드 실패:", e);
-      }
+      } catch (e) { console.log("효과음 로드 실패:", e); }
     }
     
     function playHitSound() {
@@ -364,16 +507,11 @@
       }
 
       convertToMono(audioBuffer) {
-        const numberOfChannels = audioBuffer.numberOfChannels;
-        if (numberOfChannels === 1) {
-          return audioBuffer.getChannelData(0);
-        }
+        if (audioBuffer.numberOfChannels === 1) return audioBuffer.getChannelData(0);
         const left = audioBuffer.getChannelData(0);
         const right = audioBuffer.getChannelData(1);
         const mono = new Float32Array(left.length);
-        for (let i = 0; i < left.length; i++) {
-          mono[i] = (left[i] + right[i]) / 2;
-        }
+        for (let i = 0; i < left.length; i++) mono[i] = (left[i] + right[i]) / 2;
         return mono;
       }
 
@@ -383,21 +521,14 @@
         const minSamples = Math.floor(sampleRate * this.minInterval / 1000);
         let lastPeakIndex = -minSamples;
         let totalSum = 0;
-        for (let i = 0; i < monoData.length; i++) {
-          totalSum += Math.abs(monoData[i]);
-        }
-        const avgVolume = totalSum / monoData.length;
-        const dynamicThreshold = avgVolume * (1 + this.threshold);
+        for (let i = 0; i < monoData.length; i++) totalSum += Math.abs(monoData[i]);
+        const dynamicThreshold = (totalSum / monoData.length) * (1 + this.threshold);
         for (let i = 0; i < monoData.length; i += chunkSize) {
           let chunkSum = 0;
           const end = Math.min(i + chunkSize, monoData.length);
-          for (let j = i; j < end; j++) {
-            chunkSum += Math.abs(monoData[j]);
-          }
-          const chunkAvg = chunkSum / (end - i);
-          if (chunkAvg > dynamicThreshold && (i - lastPeakIndex) > minSamples) {
-            const timeInSeconds = i / sampleRate;
-            peaks.push(timeInSeconds);
+          for (let j = i; j < end; j++) chunkSum += Math.abs(monoData[j]);
+          if ((chunkSum / (end - i)) > dynamicThreshold && (i - lastPeakIndex) > minSamples) {
+            peaks.push(i / sampleRate);
             lastPeakIndex = i;
           }
         }
@@ -406,31 +537,17 @@
 
       generateNotes(peaks) {
         const keys = ['D', 'F'];
-        const notes = [];
-        for (let i = 0; i < peaks.length; i++) {
-          const keyIndex = i % keys.length;
-          notes.push({
-            time: peaks[i],
-            key: keys[keyIndex]
-          });
-        }
-        return notes;
+        return peaks.map((time, i) => ({ time, key: keys[i % 2] }));
       }
     }
 
-    const DIFFICULTY = {
-      EASY: { threshold: 0.8, minInterval: 500 },
-      NORMAL: { threshold: 0.5, minInterval: 300 },
-      HARD: { threshold: 0.3, minInterval: 150 }
-    };
-    
+    const DIFFICULTY = { HARD: { threshold: 0.3, minInterval: 150 } };
     const LANE_KEYS = ['D', 'F'];
     const LANE_COLORS = ['#ff6b6b', '#4d96ff'];
-    const NOTE_WIDTH = 90;
-    const NOTE_HEIGHT = 30;
+    const NOTE_WIDTH = 90, NOTE_HEIGHT = 30;
     const HIT_LINE_Y_RATIO = 0.82;
     const NOTE_TRAVEL_TIME = 1.5;
-    const COUNTDOWN_TIME = 3; // 카운트다운 3초
+    const COUNTDOWN_TIME = 3;
     
     const JUDGMENT = {
       PERFECT: { threshold: 300, score: 100, color: '#ffff00', text: 'PERFECT!' },
@@ -438,18 +555,13 @@
       MISS: { threshold: 800, score: 0, color: '#ff0000', text: 'MISS' }
     };
     
-    let score = 0;
-    let combo = 0;
-    let maxCombo = 0;
-    let notes = [];
-    let isPlaying = false;
-    let hitLineY = 0;
-    let noteSpeed = 0;
-    let gameStartTime = 0;
+    let score = 0, combo = 0, maxCombo = 0;
+    let perfectCount = 0, goodCount = 0, missCount = 0;
+    let notes = [], isPlaying = false, hitLineY = 0, noteSpeed = 0, gameStartTime = 0;
     
-    // DOM 요소
     const songSelect = document.getElementById("song-select");
     const gameContainer = document.getElementById("game-container");
+    const resultScreen = document.getElementById("result-screen");
     const video = document.getElementById("video-bg");
     const canvas = document.getElementById("notes-layer");
     const ctx = canvas.getContext("2d");
@@ -460,8 +572,9 @@
     const notesArea = document.getElementById("notes-area");
     const playBtn = document.getElementById("play-btn");
     const countdownDiv = document.getElementById("countdown");
+    const retryBtn = document.getElementById("retry-btn");
+    const backBtn = document.getElementById("back-btn");
     
-    // 곡 선택
     document.querySelectorAll('.song-card').forEach(card => {
       card.addEventListener('click', () => {
         document.querySelectorAll('.song-card').forEach(c => c.classList.remove('selected'));
@@ -471,6 +584,8 @@
     });
     
     playBtn.addEventListener('click', startGameFlow);
+    retryBtn.addEventListener('click', retryGame);
+    backBtn.addEventListener('click', backToSongSelect);
     
     function resizeCanvas() {
       canvas.width = notesArea.clientWidth;
@@ -481,57 +596,47 @@
     
     function getLaneX(laneIndex) {
       const totalWidth = LANE_KEYS.length * (NOTE_WIDTH + 40);
-      const startX = (canvas.width - totalWidth) / 2;
-      return startX + laneIndex * (NOTE_WIDTH + 40);
+      return (canvas.width - totalWidth) / 2 + laneIndex * (NOTE_WIDTH + 40);
+    }
+    
+    function resetGame() {
+      score = combo = maxCombo = perfectCount = goodCount = missCount = 0;
+      notes = []; isPlaying = false;
+      updateUI();
     }
     
     async function startGameFlow() {
+      resetGame();
       const song = SONGS[selectedSongIndex];
-      
-      // 화면 전환
       songSelect.style.display = 'none';
+      resultScreen.classList.remove('active');
       gameContainer.classList.add('active');
-      
       resizeCanvas();
       window.addEventListener('resize', resizeCanvas);
-      
-      // 비디오 로드
       video.src = song.videoUrl;
       video.crossOrigin = "anonymous";
-      
       loadingDiv.style.display = "block";
       
       try {
         await loadSounds();
         const detector = new BeatDetector(DIFFICULTY.HARD);
         const detectedNotes = await detector.detectBeats(song.videoUrl);
-        
-        // 노트 시간에 카운트다운 시간 추가 (노트가 위에서 시작하도록!)
         notes = detectedNotes.map(note => ({
-          ...note,
-          time: note.time + COUNTDOWN_TIME + NOTE_TRAVEL_TIME,
-          hit: false,
-          missed: false
+          ...note, time: note.time + COUNTDOWN_TIME + NOTE_TRAVEL_TIME, hit: false, missed: false
         }));
-        
-        console.log("비트 분석 완료! 노트 수:", notes.length);
         loadingDiv.style.display = "none";
-        
-        // 카운트다운 시작
+        video.onended = showResult;
         startCountdown();
-        
       } catch (e) {
-        console.error("비트 분석 실패:", e);
         loadingDiv.textContent = "⚠️ 분석 실패! 페이지 새로고침 해주세요.";
       }
     }
     
     function startCountdown() {
       let count = 3;
+      countdownDiv.style.display = 'block';
       countdownDiv.classList.add('active');
       countdownDiv.textContent = count;
-      
-      // 카운트다운 동안 노트 렌더링 시작 (노트가 위에서 내려옴)
       gameStartTime = Date.now() / 1000;
       isPlaying = true;
       render();
@@ -541,7 +646,7 @@
         if (count > 0) {
           countdownDiv.textContent = count;
           countdownDiv.classList.remove('active');
-          void countdownDiv.offsetWidth; // 리플로우
+          void countdownDiv.offsetWidth;
           countdownDiv.classList.add('active');
         } else if (count === 0) {
           countdownDiv.textContent = "GO!";
@@ -551,7 +656,6 @@
         } else {
           clearInterval(countInterval);
           countdownDiv.style.display = 'none';
-          // 비디오 재생 시작
           video.play();
         }
       }, 1000);
@@ -560,18 +664,13 @@
     function render() {
       if (!isPlaying) return;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      
-      // 게임 시작 후 경과 시간
       const currentTime = (Date.now() / 1000) - gameStartTime;
       
-      // 레인 배경
       LANE_KEYS.forEach((key, index) => {
-        const x = getLaneX(index);
         ctx.fillStyle = 'rgba(255,255,255,0.05)';
-        ctx.fillRect(x - 5, 0, NOTE_WIDTH + 10, canvas.height);
+        ctx.fillRect(getLaneX(index) - 5, 0, NOTE_WIDTH + 10, canvas.height);
       });
       
-      // 히트라인
       ctx.strokeStyle = "rgba(255, 255, 255, 0.8)";
       ctx.lineWidth = 4;
       ctx.beginPath();
@@ -584,17 +683,9 @@
         const laneIndex = LANE_KEYS.indexOf(note.key);
         if (laneIndex === -1) return;
         const x = getLaneX(laneIndex);
-        
-        const timeUntilHit = note.time - currentTime;
-        const y = hitLineY - (timeUntilHit * noteSpeed);
-        
+        const y = hitLineY - ((note.time - currentTime) * noteSpeed);
         if (y < -NOTE_HEIGHT) return;
-        
-        const missY = hitLineY + (JUDGMENT.MISS.threshold / 1000) * noteSpeed;
-        if (y > missY) {
-          handleMiss(index);
-          return;
-        }
+        if (y > hitLineY + (JUDGMENT.MISS.threshold / 1000) * noteSpeed) { handleMiss(index); return; }
         
         ctx.fillStyle = LANE_COLORS[laneIndex];
         ctx.beginPath();
@@ -614,34 +705,20 @@
     
     function handleKeyPress(key) {
       if (!isPlaying) return;
-      
       const currentTime = (Date.now() / 1000) - gameStartTime;
       const keyUpper = key.toUpperCase();
-      
-      let closestNote = null;
-      let closestDiff = Infinity;
-      let closestIndex = -1;
+      let closestNote = null, closestDiff = Infinity, closestIndex = -1;
       
       notes.forEach((note, index) => {
-        if (note.hit || note.missed) return;
-        if (note.key !== keyUpper) return;
+        if (note.hit || note.missed || note.key !== keyUpper) return;
         const diff = Math.abs(note.time - currentTime) * 1000;
-        if (diff < closestDiff) {
-          closestDiff = diff;
-          closestNote = note;
-          closestIndex = index;
-        }
+        if (diff < closestDiff) { closestDiff = diff; closestNote = note; closestIndex = index; }
       });
       
       if (!closestNote) return;
-      
-      if (closestDiff <= JUDGMENT.PERFECT.threshold) {
-        handleHit(closestIndex, JUDGMENT.PERFECT);
-      } else if (closestDiff <= JUDGMENT.GOOD.threshold) {
-        handleHit(closestIndex, JUDGMENT.GOOD);
-      } else if (closestDiff <= JUDGMENT.MISS.threshold) {
-        handleMiss(closestIndex);
-      }
+      if (closestDiff <= JUDGMENT.PERFECT.threshold) { handleHit(closestIndex, JUDGMENT.PERFECT); perfectCount++; }
+      else if (closestDiff <= JUDGMENT.GOOD.threshold) { handleHit(closestIndex, JUDGMENT.GOOD); goodCount++; }
+      else if (closestDiff <= JUDGMENT.MISS.threshold) { handleMiss(closestIndex); }
     }
     
     function handleHit(index, judgment) {
@@ -657,6 +734,7 @@
     function handleMiss(index) {
       notes[index].missed = true;
       combo = 0;
+      missCount++;
       updateUI();
       showJudgment(JUDGMENT.MISS.text, JUDGMENT.MISS.color);
     }
@@ -670,9 +748,31 @@
       judgmentDisplay.textContent = text;
       judgmentDisplay.style.color = color;
       judgmentDisplay.style.opacity = 1;
-      setTimeout(() => {
-        judgmentDisplay.style.opacity = 0;
-      }, 300);
+      setTimeout(() => { judgmentDisplay.style.opacity = 0; }, 300);
+    }
+    
+    function showResult() {
+      isPlaying = false;
+      video.pause();
+      document.getElementById('final-score').textContent = "SCORE: " + Math.floor(score);
+      document.getElementById('perfect-count').textContent = perfectCount;
+      document.getElementById('good-count').textContent = goodCount;
+      document.getElementById('miss-count').textContent = missCount;
+      document.getElementById('max-combo').textContent = maxCombo;
+      resultScreen.classList.add('active');
+    }
+    
+    function retryGame() {
+      resultScreen.classList.remove('active');
+      startGameFlow();
+    }
+    
+    function backToSongSelect() {
+      resultScreen.classList.remove('active');
+      gameContainer.classList.remove('active');
+      songSelect.style.display = 'flex';
+      video.pause();
+      video.currentTime = 0;
     }
     
     document.addEventListener("keydown", (e) => {
