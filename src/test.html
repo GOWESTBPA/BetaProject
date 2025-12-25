@@ -229,7 +229,9 @@
       }
     }
     
-    const NOTE_START_DELAY = 3;
+    // 노트가 화면 위에서 히트존까지 내려오는 시간 (초)
+    // 히트존 위치(82%)와 노트 속도로 계산
+    const NOTE_FALL_TIME = 2.0; // 약 2초 동안 내려옴
     
     class BeatDetector {
       constructor(options = {}) {
@@ -295,8 +297,9 @@
         const notes = [];
         for (let i = 0; i < peaks.length; i++) {
           const keyIndex = i % keys.length;
+          // 비트 시간 그대로 저장 (싱크 정확!)
           notes.push({
-            time: peaks[i] + NOTE_START_DELAY,
+            time: peaks[i],
             key: keys[keyIndex]
           });
         }
@@ -315,7 +318,7 @@
     const NOTE_WIDTH = 90;
     const NOTE_HEIGHT = 30;
     const HIT_LINE_Y_RATIO = 0.82;
-    const NOTE_SPEED = 350;
+    const NOTE_SPEED = 400; // 속도 조정
     
     const JUDGMENT = {
       PERFECT: { threshold: 300, score: 100, color: '#ffff00', text: 'PERFECT!' },
@@ -391,7 +394,10 @@
       if (!isPlaying) return;
       const hitLineY = canvas.height * HIT_LINE_Y_RATIO;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      const now = Date.now() / 1000 - startTime;
+      
+      // 비디오 현재 시간으로 싱크 맞추기!
+      const now = video.currentTime;
+      
       LANE_KEYS.forEach((key, index) => {
         const x = getLaneX(index);
         ctx.fillStyle = 'rgba(255,255,255,0.05)';
@@ -403,17 +409,28 @@
       ctx.moveTo(getLaneX(0) - 20, hitLineY);
       ctx.lineTo(getLaneX(1) + NOTE_WIDTH + 20, hitLineY);
       ctx.stroke();
+      
       notes.forEach((note, index) => {
         if (note.hit || note.missed) return;
         const laneIndex = LANE_KEYS.indexOf(note.key);
         if (laneIndex === -1) return;
         const x = getLaneX(laneIndex);
-        const y = hitLineY - (note.time - now) * NOTE_SPEED;
+        
+        // 노트가 비트 시간에 맞춰 히트존에 도착하도록 계산
+        // y = 0 (화면 위) -> y = hitLineY (히트존)
+        // note.time에 히트존 도착, 그 전에 위에서 내려옴
+        const timeUntilHit = note.time - now;
+        const y = hitLineY - (timeUntilHit * NOTE_SPEED);
+        
+        // 화면 위로 벗어난 노트는 아직 안 그림
         if (y < -NOTE_HEIGHT) return;
+        
+        // 히트존 아래로 너무 벗어난 노트는 MISS
         if (y > hitLineY + JUDGMENT.MISS.threshold * NOTE_SPEED / 1000) {
           handleMiss(index);
           return;
         }
+        
         ctx.fillStyle = LANE_COLORS[laneIndex];
         ctx.beginPath();
         ctx.roundRect(x, y, NOTE_WIDTH, NOTE_HEIGHT, 8);
@@ -426,16 +443,21 @@
         ctx.textAlign = "center";
         ctx.fillText(note.key, x + NOTE_WIDTH/2, y + NOTE_HEIGHT/2 + 6);
       });
+      
       requestAnimationFrame(render);
     }
     
     function handleKeyPress(key) {
       if (!isPlaying) return;
-      const now = Date.now() / 1000 - startTime;
+      
+      // 비디오 시간으로 싱크 맞추기!
+      const now = video.currentTime;
       const keyUpper = key.toUpperCase();
+      
       let closestNote = null;
       let closestDiff = Infinity;
       let closestIndex = -1;
+      
       notes.forEach((note, index) => {
         if (note.hit || note.missed) return;
         if (note.key !== keyUpper) return;
@@ -446,7 +468,9 @@
           closestIndex = index;
         }
       });
+      
       if (!closestNote) return;
+      
       if (closestDiff <= JUDGMENT.PERFECT.threshold) {
         handleHit(closestIndex, JUDGMENT.PERFECT);
       } else if (closestDiff <= JUDGMENT.GOOD.threshold) {
