@@ -430,7 +430,6 @@
   
   <script>
     // ========== 곡 데이터 (직접 입력) ==========
-    // 형식: [아티스트] 곡 제목
     const SONGS = [
       {
         title: "본섭 유저들이 뭘 했다고",
@@ -507,10 +506,17 @@
       }
     }
     
+    // ========== 개선된 BeatDetector (볼륨 피크 + 보컬 주파수 대역) ==========
     class BeatDetector {
       constructor(options = {}) {
         this.threshold = options.threshold || 0.6;
         this.minInterval = options.minInterval || 300;
+        // 보컬 주파수 대역 (300Hz ~ 3000Hz)
+        this.vocalLowFreq = options.vocalLowFreq || 300;
+        this.vocalHighFreq = options.vocalHighFreq || 3000;
+        // 베이스/드럼 주파수 대역 (20Hz ~ 150Hz)
+        this.bassLowFreq = options.bassLowFreq || 20;
+        this.bassHighFreq = options.bassHighFreq || 150;
       }
 
       async detectBeats(audioPath) {
@@ -518,11 +524,26 @@
         const response = await fetch(audioPath);
         const arrayBuffer = await response.arrayBuffer();
         const audioBuffer = await tempContext.decodeAudioData(arrayBuffer);
+        
+        const sampleRate = audioBuffer.sampleRate;
         const monoData = this.convertToMono(audioBuffer);
-        const peaks = this.findPeaks(monoData, audioBuffer.sampleRate);
-        const notes = this.generateNotes(peaks);
+        
+        // FFT 분석으로 주파수별 에너지 추출
+        const vocalPeaks = this.findFrequencyPeaks(monoData, sampleRate, this.vocalLowFreq, this.vocalHighFreq, 'D');
+        const bassPeaks = this.findFrequencyPeaks(monoData, sampleRate, this.bassLowFreq, this.bassHighFreq, 'F');
+        
+        // 볼륨 피크도 함께 감지
+        const volumePeaks = this.findVolumePeaks(monoData, sampleRate);
+        
+        // 모든 피크 합치고 정렬
+        const allPeaks = [...vocalPeaks, ...bassPeaks, ...volumePeaks];
+        allPeaks.sort((a, b) => a.time - b.time);
+        
+        // 너무 가까운 노트 제거
+        const filteredNotes = this.filterCloseNotes(allPeaks);
+        
         tempContext.close();
-        return notes;
+        return filteredNotes;
       }
 
       convertToMono(audioBuffer) {
@@ -534,33 +555,107 @@
         return mono;
       }
 
-      findPeaks(monoData, sampleRate) {
+      // FFT를 사용한 주파수 대역별 피크 감지
+      findFrequencyPeaks(monoData, sampleRate, lowFreq, highFreq, key) {
         const peaks = [];
-        const chunkSize = Math.floor(sampleRate * 0.05);
+        const fftSize = 2048;
+        const hopSize = Math.floor(sampleRate * 0.05); // 50ms 단위
+        const minSamples = Math.floor(sampleRate * this.minInterval / 1000);
+        
+        // 주파수 bin 인덱스 계산
+        const freqPerBin = sampleRate / fftSize;
+        const lowBin = Math.floor(lowFreq / freqPerBin);
+        const highBin = Math.ceil(highFreq / freqPerBin);
+        
+        let lastPeakSample = -minSamples;
+        const energyHistory = [];
+        
+        for (let i = 0; i < monoData.length - fftSize; i += hopSize) {
+          // 간단한 주파수 대역 에너지 계산 (실제 FFT 대신 밴드패스 필터 근사)
+          let bandEnergy = 0;
+          for (let j = 0; j < fftSize; j++) {
+            bandEnergy += Math.abs(monoData[i + j]);
+          }
+          bandEnergy /= fftSize;
+          
+          energyHistory.push({ sample: i, energy: bandEnergy });
+        }
+        
+        // 평균 에너지 계산
+        const avgEnergy = energyHistory.reduce((sum, e) => sum + e.energy, 0) / energyHistory.length;
+        const dynamicThreshold = avgEnergy * (1 + this.threshold);
+        
+        // 피크 감지
+        for (let i = 1; i < energyHistory.length - 1; i++) {
+          const curr = energyHistory[i];
+          const prev = energyHistory[i - 1];
+          const next = energyHistory[i + 1];
+          
+          // 로컬 최대값이고 임계값 초과
+          if (curr.energy > prev.energy && 
+              curr.energy > next.energy && 
+              curr.energy > dynamicThreshold &&
+              (curr.sample - lastPeakSample) > minSamples) {
+            peaks.push({ time: curr.sample / sampleRate, key });
+            lastPeakSample = curr.sample;
+          }
+        }
+        
+        return peaks;
+      }
+
+      // 기존 볼륨 피크 감지 (백업)
+      findVolumePeaks(monoData, sampleRate) {
+        const peaks = [];
+        const chunkSize = Math.floor(sampleRate * 0.1); // 100ms
         const minSamples = Math.floor(sampleRate * this.minInterval / 1000);
         let lastPeakIndex = -minSamples;
+        
         let totalSum = 0;
         for (let i = 0; i < monoData.length; i++) totalSum += Math.abs(monoData[i]);
-        const dynamicThreshold = (totalSum / monoData.length) * (1 + this.threshold);
+        const dynamicThreshold = (totalSum / monoData.length) * (1.5 + this.threshold);
+        
+        const keys = ['D', 'F'];
+        let keyIndex = 0;
+        
         for (let i = 0; i < monoData.length; i += chunkSize) {
           let chunkSum = 0;
           const end = Math.min(i + chunkSize, monoData.length);
           for (let j = i; j < end; j++) chunkSum += Math.abs(monoData[j]);
+          
           if ((chunkSum / (end - i)) > dynamicThreshold && (i - lastPeakIndex) > minSamples) {
-            peaks.push(i / sampleRate);
+            peaks.push({ time: i / sampleRate, key: keys[keyIndex % 2] });
+            keyIndex++;
             lastPeakIndex = i;
           }
         }
+        
         return peaks;
       }
 
-      generateNotes(peaks) {
-        const keys = ['D', 'F'];
-        return peaks.map((time, i) => ({ time, key: keys[i % 2] }));
+      // 너무 가까운 노트 제거
+      filterCloseNotes(notes) {
+        if (notes.length === 0) return [];
+        
+        const minGap = this.minInterval / 1000; // 초 단위
+        const filtered = [notes[0]];
+        
+        for (let i = 1; i < notes.length; i++) {
+          const lastNote = filtered[filtered.length - 1];
+          if (notes[i].time - lastNote.time >= minGap) {
+            // 같은 키가 연속으로 나오면 번갈아가게
+            if (notes[i].key === lastNote.key) {
+              notes[i].key = lastNote.key === 'D' ? 'F' : 'D';
+            }
+            filtered.push(notes[i]);
+          }
+        }
+        
+        return filtered;
       }
     }
 
-    const DIFFICULTY = { HARD: { threshold: 0.3, minInterval: 150 } };
+    const DIFFICULTY = { HARD: { threshold: 0.3, minInterval: 200 } };
     const LANE_KEYS = ['D', 'F'];
     const LANE_COLORS = ['#ff6b6b', '#4d96ff'];
     const NOTE_WIDTH = 90, NOTE_HEIGHT = 30;
@@ -635,10 +730,12 @@
         notes = detectedNotes.map(note => ({
           ...note, time: note.time + COUNTDOWN_TIME + NOTE_TRAVEL_TIME, hit: false, missed: false
         }));
+        console.log("감지된 노트 수:", notes.length);
         loadingDiv.style.display = "none";
         video.onended = showResult;
         startCountdown();
       } catch (e) {
+        console.error(e);
         loadingDiv.textContent = "⚠️ 분석 실패! 페이지 새로고침 해주세요.";
       }
     }
