@@ -229,10 +229,6 @@
       }
     }
     
-    // 노트가 화면 위에서 히트존까지 내려오는 시간 (초)
-    // 히트존 위치(82%)와 노트 속도로 계산
-    const NOTE_FALL_TIME = 2.0; // 약 2초 동안 내려옴
-    
     class BeatDetector {
       constructor(options = {}) {
         this.threshold = options.threshold || 0.6;
@@ -297,7 +293,6 @@
         const notes = [];
         for (let i = 0; i < peaks.length; i++) {
           const keyIndex = i % keys.length;
-          // 비트 시간 그대로 저장 (싱크 정확!)
           notes.push({
             time: peaks[i],
             key: keys[keyIndex]
@@ -318,7 +313,9 @@
     const NOTE_WIDTH = 90;
     const NOTE_HEIGHT = 30;
     const HIT_LINE_Y_RATIO = 0.82;
-    const NOTE_SPEED = 400; // 속도 조정
+    
+    // 노트가 화면 위에서 히트존까지 내려오는 시간 (초)
+    const NOTE_TRAVEL_TIME = 1.5;
     
     const JUDGMENT = {
       PERFECT: { threshold: 300, score: 100, color: '#ffff00', text: 'PERFECT!' },
@@ -330,8 +327,9 @@
     let combo = 0;
     let maxCombo = 0;
     let notes = [];
-    let startTime = 0;
     let isPlaying = false;
+    let hitLineY = 0;
+    let noteSpeed = 0;
     
     const video = document.getElementById("video-bg");
     const canvas = document.getElementById("notes-layer");
@@ -346,6 +344,9 @@
     function resizeCanvas() {
       canvas.width = notesArea.clientWidth;
       canvas.height = notesArea.clientHeight;
+      hitLineY = canvas.height * HIT_LINE_Y_RATIO;
+      // 노트 속도 = 히트존까지 거리 / 이동 시간
+      noteSpeed = hitLineY / NOTE_TRAVEL_TIME;
     }
     resizeCanvas();
     window.addEventListener('resize', resizeCanvas);
@@ -385,24 +386,25 @@
     
     function startGame() {
       video.play();
-      startTime = Date.now() / 1000;
       isPlaying = true;
       render();
     }
     
     function render() {
       if (!isPlaying) return;
-      const hitLineY = canvas.height * HIT_LINE_Y_RATIO;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       
-      // 비디오 현재 시간으로 싱크 맞추기!
-      const now = video.currentTime;
+      // 비디오 현재 시간 = 음악 싱크의 기준!
+      const currentTime = video.currentTime;
       
+      // 레인 배경
       LANE_KEYS.forEach((key, index) => {
         const x = getLaneX(index);
         ctx.fillStyle = 'rgba(255,255,255,0.05)';
         ctx.fillRect(x - 5, 0, NOTE_WIDTH + 10, canvas.height);
       });
+      
+      // 히트라인
       ctx.strokeStyle = "rgba(255, 255, 255, 0.8)";
       ctx.lineWidth = 4;
       ctx.beginPath();
@@ -416,21 +418,31 @@
         if (laneIndex === -1) return;
         const x = getLaneX(laneIndex);
         
-        // 노트가 비트 시간에 맞춰 히트존에 도착하도록 계산
-        // y = 0 (화면 위) -> y = hitLineY (히트존)
-        // note.time에 히트존 도착, 그 전에 위에서 내려옴
-        const timeUntilHit = note.time - now;
-        const y = hitLineY - (timeUntilHit * NOTE_SPEED);
+        // 핵심 계산:
+        // - note.time = 비트가 발생하는 시간 (히트존에 도착해야 하는 시간)
+        // - currentTime = 현재 비디오 시간
+        // - 노트는 note.time - NOTE_TRAVEL_TIME 에 화면 맨 위(y=0)에서 출발
+        // - 노트는 note.time 에 히트존(y=hitLineY)에 도착
         
-        // 화면 위로 벗어난 노트는 아직 안 그림
+        const timeUntilHit = note.time - currentTime; // 히트까지 남은 시간
+        
+        // y 위치: 히트존에서 (남은시간 * 속도) 만큼 위
+        // timeUntilHit > 0 이면 아직 히트존 위에 있음
+        // timeUntilHit = 0 이면 정확히 히트존
+        // timeUntilHit < 0 이면 히트존 아래로 지나감
+        const y = hitLineY - (timeUntilHit * noteSpeed);
+        
+        // 아직 화면 위에 안 나타난 노트 (너무 이른 노트)
         if (y < -NOTE_HEIGHT) return;
         
         // 히트존 아래로 너무 벗어난 노트는 MISS
-        if (y > hitLineY + JUDGMENT.MISS.threshold * NOTE_SPEED / 1000) {
+        const missY = hitLineY + (JUDGMENT.MISS.threshold / 1000) * noteSpeed;
+        if (y > missY) {
           handleMiss(index);
           return;
         }
         
+        // 노트 그리기
         ctx.fillStyle = LANE_COLORS[laneIndex];
         ctx.beginPath();
         ctx.roundRect(x, y, NOTE_WIDTH, NOTE_HEIGHT, 8);
@@ -450,8 +462,7 @@
     function handleKeyPress(key) {
       if (!isPlaying) return;
       
-      // 비디오 시간으로 싱크 맞추기!
-      const now = video.currentTime;
+      const currentTime = video.currentTime;
       const keyUpper = key.toUpperCase();
       
       let closestNote = null;
@@ -461,7 +472,8 @@
       notes.forEach((note, index) => {
         if (note.hit || note.missed) return;
         if (note.key !== keyUpper) return;
-        const diff = Math.abs(note.time - now) * 1000;
+        // 밀리초 단위로 차이 계산
+        const diff = Math.abs(note.time - currentTime) * 1000;
         if (diff < closestDiff) {
           closestDiff = diff;
           closestNote = note;
