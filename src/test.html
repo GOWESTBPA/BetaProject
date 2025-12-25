@@ -372,15 +372,7 @@
   <!-- 곡 선택 화면 -->
   <div id="song-select">
     <h1>🎵 리듬게임</h1>
-    <div id="song-list">
-      <div class="song-card selected" data-index="0">
-        <img class="song-thumbnail" src="https://res.cloudinary.com/danknjfhv/image/upload/v1766655396/hq720_1_dwlxnv.jpg">
-        <div class="song-info">
-          <div class="song-title">왜클릭 메이플 AI 본섭 유저들이 뭘 했다고</div>
-          <div class="song-artist">알 수 없음</div>
-        </div>
-      </div>
-    </div>
+    <div id="song-list"></div>
     <button id="play-btn">▶ 플레이</button>
   </div>
   
@@ -437,25 +429,77 @@
   </div>
   
   <script>
-    // ========== 곡 데이터 ==========
-    const SONGS = [
+    // ========== 파일명에서 아티스트/제목 파싱 ==========
+    // 규칙: [아티스트] 곡 제목.mp4
+    function parseFileName(url) {
+      // URL에서 파일명 추출
+      const urlParts = url.split('/');
+      const fileName = urlParts[urlParts.length - 1];
+      
+      // URL 디코딩
+      const decoded = decodeURIComponent(fileName);
+      
+      // 확장자 제거
+      const nameOnly = decoded.replace(/\.[^/.]+$/, "");
+      
+      // [아티스트] 곡 제목 형식 파싱
+      const match = nameOnly.match(/^\[(.+?)\]\s*(.+)$/);
+      if (match) {
+        return { 
+          artist: match[1].trim(), 
+          title: match[2].trim().replace(/_/g, ' ')
+        };
+      }
+      
+      // 매칭 안 되면 전체를 제목으로, 언더스코어를 공백으로
+      return { 
+        artist: "알 수 없음", 
+        title: nameOnly.replace(/_/g, ' ')
+      };
+    }
+    
+    // ========== 곡 데이터 (URL만 저장, 제목/아티스트는 파싱) ==========
+    const SONG_URLS = [
       {
-        title: "왜클릭 메이플 AI 본섭 유저들이 뭘 했다고",
-        artist: "알 수 없음",
         videoUrl: "https://res.cloudinary.com/danknjfhv/video/upload/v1766605968/%EC%99%9C%ED%81%B4%EB%A6%AD_%EB%A9%94%EC%9D%B4%ED%94%8C_AI_%EB%B3%B8%EC%84%AD_%EC%9C%A0%EC%A0%80%EB%93%A4%EC%9D%B4_%EB%AD%98_%ED%96%88%EB%8B%A4%EA%B3%A0_ooya98go318_url4h2.mp4",
         thumbnailUrl: "https://res.cloudinary.com/danknjfhv/image/upload/v1766655396/hq720_1_dwlxnv.jpg"
       }
     ];
     
-    // 파일명에서 아티스트/제목 파싱: [아티스트] 곡 제목
-    function parseFileName(fileName) {
-      const decoded = decodeURIComponent(fileName);
-      const nameOnly = decoded.replace(/\.[^/.]+$/, "");
-      const match = nameOnly.match(/^\[(.+?)\]\s*(.+)$/);
-      if (match) {
-        return { artist: match[1].trim(), title: match[2].trim() };
-      }
-      return { artist: "알 수 없음", title: nameOnly.replace(/_/g, ' ') };
+    // URL에서 곡 정보 파싱하여 SONGS 배열 생성
+    const SONGS = SONG_URLS.map(song => {
+      const parsed = parseFileName(song.videoUrl);
+      return {
+        title: parsed.title,
+        artist: parsed.artist,
+        videoUrl: song.videoUrl,
+        thumbnailUrl: song.thumbnailUrl
+      };
+    });
+    
+    // 곡 목록 동적 생성
+    function renderSongList() {
+      const songList = document.getElementById('song-list');
+      songList.innerHTML = '';
+      
+      SONGS.forEach((song, index) => {
+        const card = document.createElement('div');
+        card.className = 'song-card' + (index === 0 ? ' selected' : '');
+        card.dataset.index = index;
+        card.innerHTML = `
+          <img class="song-thumbnail" src="${song.thumbnailUrl}" onerror="this.style.background='linear-gradient(135deg, #ff6b6b, #4d96ff)'">
+          <div class="song-info">
+            <div class="song-title">${song.title}</div>
+            <div class="song-artist">${song.artist}</div>
+          </div>
+        `;
+        card.addEventListener('click', () => {
+          document.querySelectorAll('.song-card').forEach(c => c.classList.remove('selected'));
+          card.classList.add('selected');
+          selectedSongIndex = index;
+        });
+        songList.appendChild(card);
+      });
     }
     
     let selectedSongIndex = 0;
@@ -574,14 +618,6 @@
     const countdownDiv = document.getElementById("countdown");
     const retryBtn = document.getElementById("retry-btn");
     const backBtn = document.getElementById("back-btn");
-    
-    document.querySelectorAll('.song-card').forEach(card => {
-      card.addEventListener('click', () => {
-        document.querySelectorAll('.song-card').forEach(c => c.classList.remove('selected'));
-        card.classList.add('selected');
-        selectedSongIndex = parseInt(card.dataset.index);
-      });
-    });
     
     playBtn.addEventListener('click', startGameFlow);
     retryBtn.addEventListener('click', retryGame);
@@ -789,6 +825,9 @@
       const hint = document.querySelector(`.key-hint[data-key="${key}"]`);
       if (hint) hint.classList.remove("active");
     });
+    
+    // 페이지 로드 시 곡 목록 렌더링
+    window.onload = renderSongList;
   </script>
 </body>
 </html>
