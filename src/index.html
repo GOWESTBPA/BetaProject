@@ -2,11 +2,179 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>BetaProject Rhythm</title>
+  <title>리듬게임</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    
+    body { 
+      overflow: hidden; 
+      background: #1a1a2e; 
+      font-family: 'Segoe UI', sans-serif;
+      height: 100vh;
+      max-height: 100vh;
+    }
+    
+    #song-select {
+      width: 100%;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+    }
+    
+    #song-select h1 {
+      color: white;
+      font-size: 48px;
+      margin-bottom: 50px;
+      text-shadow: 0 0 20px rgba(77, 150, 255, 0.5);
+    }
+    
+    #song-list {
+      display: flex;
+      gap: 30px;
+      flex-wrap: wrap;
+      justify-content: center;
+      max-width: 900px;
+    }
+    
+    .song-card {
+      width: 280px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 20px;
+      overflow: hidden;
+      cursor: pointer;
+      transition: all 0.3s;
+      border: 3px solid transparent;
+    }
+    
+    .song-card:hover {
+      transform: translateY(-10px);
+      border-color: #4d96ff;
+      box-shadow: 0 10px 30px rgba(77, 150, 255, 0.3);
+    }
+    
+    .song-card.selected {
+      border-color: #ff6b6b;
+      box-shadow: 0 10px 30px rgba(255, 107, 107, 0.3);
+    }
+    
+    .song-thumbnail {
+      width: 100%;
+      height: 160px;
+      object-fit: cover;
+      background: #333;
+    }
+    
+    .song-info {
+      padding: 20px;
+      color: white;
+    }
+    
+    .song-title {
+      font-size: 18px;
+      font-weight: bold;
+      margin-bottom: 8px;
+    }
+    
+    .song-artist {
+      font-size: 14px;
+      color: #aaa;
+    }
+    
+    #play-btn {
+      margin-top: 40px;
+      padding: 20px 60px;
+      font-size: 24px;
+      font-weight: bold;
+      background: linear-gradient(135deg, #ff6b6b, #ff8e8e);
+      color: white;
+      border: none;
+      border-radius: 50px;
+      cursor: pointer;
+      transition: all 0.3s;
+      box-shadow: 0 5px 20px rgba(255, 107, 107, 0.4);
+    }
+    
+    #play-btn:hover {
+      transform: scale(1.05);
+      box-shadow: 0 8px 30px rgba(255, 107, 107, 0.6);
+    }
+    
+    #play-btn:disabled {
+      background: #666;
+      cursor: not-allowed;
+      box-shadow: none;
+    }
+    
+    #loading-message {
+      color: white;
+      font-size: 20px;
+      margin-top: 20px;
+    }
+  </style>
 </head>
-<body style="background:#111;color:white;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;">
-  <h1>BetaProject Rhythm</h1>
-  <div id="song-list"></div>
+<body>
+  <div id="song-select">
+    <h1>🎵 리듬게임</h1>
+    <div id="song-list"></div>
+    <button id="play-btn" disabled>▶ 플레이</button>
+    <div id="loading-message">곡 목록 로딩 중...</div>
+  </div>
+  
+  <script>
+    let songs = [];
+    let selectedSongIndex = -1;
+    
+    async function fetchSongs() {
+      try {
+        const response = await fetch('../songs.json');
+        songs = await response.json();
+        renderSongList();
+        document.getElementById('loading-message').style.display = 'none';
+      } catch (e) {
+        console.error('곡 목록 로드 실패:', e);
+        document.getElementById('loading-message').textContent = '⚠️ 곡 목록을 불러올 수 없습니다.';
+      }
+    }
+    
+    function renderSongList() {
+      const songList = document.getElementById('song-list');
+      songList.innerHTML = '';
+      
+      songs.forEach((song, index) => {
+        const card = document.createElement('div');
+        card.className = 'song-card';
+        card.dataset.index = index;
+        card.innerHTML = `
+          <img class="song-thumbnail" src="${song.thumbnailUrl}" onerror="this.style.background='linear-gradient(135deg, #ff6b6b, #4d96ff)'">
+          <div class="song-info">
+            <div class="song-title">${song.title}</div>
+            <div class="song-artist">${song.artist}</div>
+          </div>
+        `;
+        card.addEventListener('click', () => {
+          document.querySelectorAll('.song-card').forEach(c => c.classList.remove('selected'));
+          card.classList.add('selected');
+          selectedSongIndex = index;
+          document.getElementById('play-btn').disabled = false;
+        });
+        songList.appendChild(card);
+      });
+    }
+    
+    function startGame() {
+      if (selectedSongIndex < 0) return;
+      
+      const selectedSong = songs[selectedSongIndex];
+      localStorage.setItem('selectedSong', JSON.stringify(selectedSong));
+      window.location.href = 'game.html';
+    }
+    
+    document.getElementById('play-btn').addEventListener('click', startGame);
+    
+    window.onload = fetchSongs;
+  </script>
 </body>
-<script src="renderer.js"></script>
 </html>
