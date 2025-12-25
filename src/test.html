@@ -2,23 +2,123 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>테스트 플레이</title>
+  <title>리듬게임</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     
     body { 
       overflow: hidden; 
       background: #1a1a2e; 
-      font-family: sans-serif;
+      font-family: 'Segoe UI', sans-serif;
       height: 100vh;
       max-height: 100vh;
     }
     
-    #game-container {
+    /* ========== 곡 선택 화면 ========== */
+    #song-select {
+      width: 100%;
+      height: 100vh;
       display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+    }
+    
+    #song-select h1 {
+      color: white;
+      font-size: 48px;
+      margin-bottom: 50px;
+      text-shadow: 0 0 20px rgba(77, 150, 255, 0.5);
+    }
+    
+    #song-list {
+      display: flex;
+      gap: 30px;
+      flex-wrap: wrap;
+      justify-content: center;
+      max-width: 900px;
+    }
+    
+    .song-card {
+      width: 280px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 20px;
+      overflow: hidden;
+      cursor: pointer;
+      transition: all 0.3s;
+      border: 3px solid transparent;
+    }
+    
+    .song-card:hover {
+      transform: translateY(-10px);
+      border-color: #4d96ff;
+      box-shadow: 0 10px 30px rgba(77, 150, 255, 0.3);
+    }
+    
+    .song-card.selected {
+      border-color: #ff6b6b;
+      box-shadow: 0 10px 30px rgba(255, 107, 107, 0.3);
+    }
+    
+    .song-thumbnail {
+      width: 100%;
+      height: 160px;
+      object-fit: cover;
+      background: #333;
+    }
+    
+    .song-info {
+      padding: 20px;
+      color: white;
+    }
+    
+    .song-title {
+      font-size: 18px;
+      font-weight: bold;
+      margin-bottom: 8px;
+    }
+    
+    .song-artist {
+      font-size: 14px;
+      color: #aaa;
+    }
+    
+    #play-btn {
+      margin-top: 40px;
+      padding: 20px 60px;
+      font-size: 24px;
+      font-weight: bold;
+      background: linear-gradient(135deg, #ff6b6b, #ff8e8e);
+      color: white;
+      border: none;
+      border-radius: 50px;
+      cursor: pointer;
+      transition: all 0.3s;
+      box-shadow: 0 5px 20px rgba(255, 107, 107, 0.4);
+    }
+    
+    #play-btn:hover {
+      transform: scale(1.05);
+      box-shadow: 0 8px 30px rgba(255, 107, 107, 0.6);
+    }
+    
+    #play-btn:disabled {
+      background: #666;
+      cursor: not-allowed;
+      box-shadow: none;
+    }
+    
+    /* ========== 게임 화면 ========== */
+    #game-container {
+      display: none;
       width: 100%;
       height: calc(100vh - 40px);
       max-height: calc(100vh - 40px);
+    }
+    
+    #game-container.active {
+      display: flex;
     }
     
     #video-area {
@@ -127,30 +227,6 @@
       transform: scale(1.1);
     }
     
-    #start-btn {
-      position: absolute;
-      top: 50%;
-      left: 27.5%;
-      transform: translate(-50%, -50%);
-      z-index: 10;
-      padding: 25px 50px;
-      font-size: 28px;
-      font-weight: bold;
-      background: linear-gradient(135deg, #ff6b6b, #ff8e8e);
-      color: white;
-      border: none;
-      border-radius: 15px;
-      cursor: pointer;
-      pointer-events: auto;
-      box-shadow: 0 5px 20px rgba(255,107,107,0.5);
-      transition: all 0.2s;
-    }
-    
-    #start-btn:hover {
-      background: linear-gradient(135deg, #ff5252, #ff6b6b);
-      transform: translate(-50%, -50%) scale(1.05);
-    }
-    
     #loading {
       position: absolute;
       top: 50%;
@@ -162,22 +238,54 @@
       display: none;
     }
     
-    #hit-line-area {
+    /* 카운트다운 */
+    #countdown {
       position: absolute;
-      bottom: 130px;
-      left: 0;
-      width: 100%;
-      height: 5px;
-      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.8), transparent);
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 120px;
+      font-weight: bold;
+      color: white;
+      text-shadow: 0 0 30px rgba(255, 107, 107, 0.8);
+      z-index: 100;
+      display: none;
+    }
+    
+    #countdown.active {
+      display: block;
+      animation: countPulse 0.5s ease-out;
+    }
+    
+    @keyframes countPulse {
+      0% { transform: translate(-50%, -50%) scale(1.5); opacity: 0; }
+      50% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+      100% { transform: translate(-50%, -50%) scale(0.9); opacity: 0.8; }
     }
   </style>
 </head>
 <body>
+  <!-- 곡 선택 화면 -->
+  <div id="song-select">
+    <h1>🎵 리듬게임</h1>
+    <div id="song-list">
+      <div class="song-card selected" data-index="0">
+        <img class="song-thumbnail" src="https://res.cloudinary.com/danknjfhv/video/upload/v1766605968/%EC%99%9C%ED%81%B4%EB%A6%AD_%EB%A9%94%EC%9D%B4%ED%94%8C_AI_%EB%B3%B8%EC%84%AD_%EC%9C%A0%EC%A0%80%EB%93%A4%EC%9D%B4_%EB%AD%98_%ED%96%88%EB%8B%A4%EA%B3%A0_ooya98go318_url4h2.jpg" onerror="this.style.background='linear-gradient(135deg, #ff6b6b, #4d96ff)'">
+        <div class="song-info">
+          <div class="song-title">왜클릭 메이플 AI 본섭</div>
+          <div class="song-artist">유저들이 뭘 했다고</div>
+        </div>
+      </div>
+    </div>
+    <button id="play-btn">▶ 플레이</button>
+  </div>
+  
+  <!-- 게임 화면 -->
   <div id="game-container">
     <div id="video-area">
       <video id="video-bg"></video>
-      <button id="start-btn">▶ 시작하기</button>
       <div id="loading">🎵 비트 분석 중... 잠시만 기다려주세요!</div>
+      <div id="countdown"></div>
     </div>
     
     <div id="notes-area">
@@ -186,7 +294,6 @@
         <div id="score-display">SCORE: 0</div>
         <div id="combo-display">COMBO: 0</div>
         <div id="judgment-display"></div>
-        <div id="hit-line-area"></div>
         <div id="key-hints">
           <div class="key-hint" data-key="D">D</div>
           <div class="key-hint" data-key="F">F</div>
@@ -196,7 +303,16 @@
   </div>
   
   <script>
-    const VIDEO_URL = "https://res.cloudinary.com/danknjfhv/video/upload/v1766605968/%EC%99%9C%ED%81%B4%EB%A6%AD_%EB%A9%94%EC%9D%B4%ED%94%8C_AI_%EB%B3%B8%EC%84%AD_%EC%9C%A0%EC%A0%80%EB%93%A4%EC%9D%B4_%EB%AD%98_%ED%96%88%EB%8B%A4%EA%B3%A0_ooya98go318_url4h2.mp4";
+    // ========== 곡 데이터 ==========
+    const SONGS = [
+      {
+        title: "왜클릭 메이플 AI 본섭",
+        artist: "유저들이 뭘 했다고",
+        videoUrl: "https://res.cloudinary.com/danknjfhv/video/upload/v1766605968/%EC%99%9C%ED%81%B4%EB%A6%AD_%EB%A9%94%EC%9D%B4%ED%94%8C_AI_%EB%B3%B8%EC%84%AD_%EC%9C%A0%EC%A0%80%EB%93%A4%EC%9D%B4_%EB%AD%98_%ED%96%88%EB%8B%A4%EA%B3%A0_ooya98go318_url4h2.mp4"
+      }
+    ];
+    
+    let selectedSongIndex = 0;
     
     const SOUND_URL = {
       hit: "https://res.cloudinary.com/danknjfhv/video/upload/v1766607567/Firework_blast_far_w8escv.ogg"
@@ -313,9 +429,8 @@
     const NOTE_WIDTH = 90;
     const NOTE_HEIGHT = 30;
     const HIT_LINE_Y_RATIO = 0.82;
-    
-    // 노트가 화면 위에서 히트존까지 내려오는 시간 (초)
     const NOTE_TRAVEL_TIME = 1.5;
+    const COUNTDOWN_TIME = 3; // 카운트다운 3초
     
     const JUDGMENT = {
       PERFECT: { threshold: 300, score: 100, color: '#ffff00', text: 'PERFECT!' },
@@ -330,26 +445,39 @@
     let isPlaying = false;
     let hitLineY = 0;
     let noteSpeed = 0;
+    let gameStartTime = 0;
     
+    // DOM 요소
+    const songSelect = document.getElementById("song-select");
+    const gameContainer = document.getElementById("game-container");
     const video = document.getElementById("video-bg");
     const canvas = document.getElementById("notes-layer");
     const ctx = canvas.getContext("2d");
     const scoreDisplay = document.getElementById("score-display");
     const comboDisplay = document.getElementById("combo-display");
     const judgmentDisplay = document.getElementById("judgment-display");
-    const startBtn = document.getElementById("start-btn");
     const loadingDiv = document.getElementById("loading");
     const notesArea = document.getElementById("notes-area");
+    const playBtn = document.getElementById("play-btn");
+    const countdownDiv = document.getElementById("countdown");
+    
+    // 곡 선택
+    document.querySelectorAll('.song-card').forEach(card => {
+      card.addEventListener('click', () => {
+        document.querySelectorAll('.song-card').forEach(c => c.classList.remove('selected'));
+        card.classList.add('selected');
+        selectedSongIndex = parseInt(card.dataset.index);
+      });
+    });
+    
+    playBtn.addEventListener('click', startGameFlow);
     
     function resizeCanvas() {
       canvas.width = notesArea.clientWidth;
       canvas.height = notesArea.clientHeight;
       hitLineY = canvas.height * HIT_LINE_Y_RATIO;
-      // 노트 속도 = 히트존까지 거리 / 이동 시간
       noteSpeed = hitLineY / NOTE_TRAVEL_TIME;
     }
-    resizeCanvas();
-    window.addEventListener('resize', resizeCanvas);
     
     function getLaneX(laneIndex) {
       const totalWidth = LANE_KEYS.length * (NOTE_WIDTH + 40);
@@ -357,45 +485,84 @@
       return startX + laneIndex * (NOTE_WIDTH + 40);
     }
     
-    async function init() {
-      video.src = VIDEO_URL;
+    async function startGameFlow() {
+      const song = SONGS[selectedSongIndex];
+      
+      // 화면 전환
+      songSelect.style.display = 'none';
+      gameContainer.classList.add('active');
+      
+      resizeCanvas();
+      window.addEventListener('resize', resizeCanvas);
+      
+      // 비디오 로드
+      video.src = song.videoUrl;
       video.crossOrigin = "anonymous";
-      console.log("초기화 완료!");
-    }
-    
-    async function analyzeAndStart() {
-      startBtn.style.display = "none";
+      
       loadingDiv.style.display = "block";
+      
       try {
         await loadSounds();
         const detector = new BeatDetector(DIFFICULTY.HARD);
-        const detectedNotes = await detector.detectBeats(VIDEO_URL);
+        const detectedNotes = await detector.detectBeats(song.videoUrl);
+        
+        // 노트 시간에 카운트다운 시간 추가 (노트가 위에서 시작하도록!)
         notes = detectedNotes.map(note => ({
           ...note,
+          time: note.time + COUNTDOWN_TIME + NOTE_TRAVEL_TIME,
           hit: false,
           missed: false
         }));
+        
         console.log("비트 분석 완료! 노트 수:", notes.length);
         loadingDiv.style.display = "none";
-        startGame();
+        
+        // 카운트다운 시작
+        startCountdown();
+        
       } catch (e) {
         console.error("비트 분석 실패:", e);
         loadingDiv.textContent = "⚠️ 분석 실패! 페이지 새로고침 해주세요.";
       }
     }
     
-    function startGame() {
-      video.play();
+    function startCountdown() {
+      let count = 3;
+      countdownDiv.classList.add('active');
+      countdownDiv.textContent = count;
+      
+      // 카운트다운 동안 노트 렌더링 시작 (노트가 위에서 내려옴)
+      gameStartTime = Date.now() / 1000;
       isPlaying = true;
       render();
+      
+      const countInterval = setInterval(() => {
+        count--;
+        if (count > 0) {
+          countdownDiv.textContent = count;
+          countdownDiv.classList.remove('active');
+          void countdownDiv.offsetWidth; // 리플로우
+          countdownDiv.classList.add('active');
+        } else if (count === 0) {
+          countdownDiv.textContent = "GO!";
+          countdownDiv.classList.remove('active');
+          void countdownDiv.offsetWidth;
+          countdownDiv.classList.add('active');
+        } else {
+          clearInterval(countInterval);
+          countdownDiv.style.display = 'none';
+          // 비디오 재생 시작
+          video.play();
+        }
+      }, 1000);
     }
     
     function render() {
       if (!isPlaying) return;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       
-      // 비디오 현재 시간 = 음악 싱크의 기준!
-      const currentTime = video.currentTime;
+      // 게임 시작 후 경과 시간
+      const currentTime = (Date.now() / 1000) - gameStartTime;
       
       // 레인 배경
       LANE_KEYS.forEach((key, index) => {
@@ -418,31 +585,17 @@
         if (laneIndex === -1) return;
         const x = getLaneX(laneIndex);
         
-        // 핵심 계산:
-        // - note.time = 비트가 발생하는 시간 (히트존에 도착해야 하는 시간)
-        // - currentTime = 현재 비디오 시간
-        // - 노트는 note.time - NOTE_TRAVEL_TIME 에 화면 맨 위(y=0)에서 출발
-        // - 노트는 note.time 에 히트존(y=hitLineY)에 도착
-        
-        const timeUntilHit = note.time - currentTime; // 히트까지 남은 시간
-        
-        // y 위치: 히트존에서 (남은시간 * 속도) 만큼 위
-        // timeUntilHit > 0 이면 아직 히트존 위에 있음
-        // timeUntilHit = 0 이면 정확히 히트존
-        // timeUntilHit < 0 이면 히트존 아래로 지나감
+        const timeUntilHit = note.time - currentTime;
         const y = hitLineY - (timeUntilHit * noteSpeed);
         
-        // 아직 화면 위에 안 나타난 노트 (너무 이른 노트)
         if (y < -NOTE_HEIGHT) return;
         
-        // 히트존 아래로 너무 벗어난 노트는 MISS
         const missY = hitLineY + (JUDGMENT.MISS.threshold / 1000) * noteSpeed;
         if (y > missY) {
           handleMiss(index);
           return;
         }
         
-        // 노트 그리기
         ctx.fillStyle = LANE_COLORS[laneIndex];
         ctx.beginPath();
         ctx.roundRect(x, y, NOTE_WIDTH, NOTE_HEIGHT, 8);
@@ -462,7 +615,7 @@
     function handleKeyPress(key) {
       if (!isPlaying) return;
       
-      const currentTime = video.currentTime;
+      const currentTime = (Date.now() / 1000) - gameStartTime;
       const keyUpper = key.toUpperCase();
       
       let closestNote = null;
@@ -472,7 +625,6 @@
       notes.forEach((note, index) => {
         if (note.hit || note.missed) return;
         if (note.key !== keyUpper) return;
-        // 밀리초 단위로 차이 계산
         const diff = Math.abs(note.time - currentTime) * 1000;
         if (diff < closestDiff) {
           closestDiff = diff;
@@ -537,9 +689,6 @@
       const hint = document.querySelector(`.key-hint[data-key="${key}"]`);
       if (hint) hint.classList.remove("active");
     });
-    
-    startBtn.addEventListener("click", analyzeAndStart);
-    window.onload = init;
   </script>
 </body>
 </html>
